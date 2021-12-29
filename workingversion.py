@@ -94,7 +94,7 @@ def transition_rate(n2,n1,kBT):
 
 def P(n,kBT):
     
-    p=transition_rate(Q(n0),Q0(n0),kBT)
+    p=transition_rate(Q(n),Q0(n),kBT)
     
     return p/sum(p)
 
