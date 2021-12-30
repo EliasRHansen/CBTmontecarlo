@@ -11,20 +11,26 @@ import scipy.sparse as sparse
 from scipy.sparse.linalg import inv
 from copy import copy
 import random as random
-#########Input
+#########Inpu
+kB=8.617*1e-5
+e_SI=1.602*1e-19
 class CBTmontecarlo:
     
-    def __init__(self,N,offset_q,n0,U,kBT,Cs,offset_C,second_order_C):
-        
+    def __init__(self,N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi):
+        self.Ec=Ec #units of eV
         self.N=N
-        self.n0=n0
-        self.Cs=Cs
-        self.second_order_C=second_order_C
-        self.U=U
-        self.offset_q=offset_q
-        self.offset_C=offset_C
+        self.n0=n0 #units of number of electrons
+        self.Cs=Cs #units of e/Ec=160 [fmF]/Ec[microeV]
+        self.second_order_C=second_order_C#units of e/Ec=160[fmF]/Ec[microeV]
+        self.U=U #units of eV
+        self.offset_q=offset_q #units of number of electrons
+        self.offset_C=offset_C#units of e/Ec=160[fmF]/Ec[microeV]
         self.n0eff=self.neff(self.n0)
-        self.kBT=kBT
+        self.kBT=kB*T #units of eV
+        self.u=self.Ec/self.kBT
+        self.Gt=Gt
+        normalization=sum(1/gi)
+        self.gi=gi*normalization
         d1=np.concatenate((self.Cs,np.zeros((1,))))
         dm1=np.concatenate((self.Cs,np.zeros((1,))))
         d2=np.concatenate((self.second_order_C[0:-1],np.zeros((2,))))
@@ -83,20 +89,20 @@ class CBTmontecarlo:
 
         Returns
         -------
-        Total energy in the system, or array of total energies if the input is a matrix with charge arrays as columns
+        Total energy in the system, or array of total energies if the input is a matrix with charge arrays as columns. The units are Ec.
             DESCRIPTION.
 
         """
         if n.shape==(self.N-1,):
             v=self.Cinv@np.array([n]).T
-            boundaries=(self.Cs[0]*v[0]+self.second_order_C[1]*v[1]-self.Cs[-1]*v[-1]-self.second_order_C[-1]*v[-2])*self.U/2
-            return np.sum(n*(v.flatten()/2+self.offset_q))+boundaries[0]
+            boundaries=(self.Cs[0]*v[0]+self.second_order_C[1]*v[1]-self.Cs[-1]*v[-1]-self.second_order_C[-1]*v[-2])*self.U/(2*self.Ec) #units of Ec
+            return np.sum(n*(v.flatten()/2+self.offset_q))+boundaries[0] #units of Ec
         elif n.shape==(self.N-1,2*self.N):
             v=self.Cinv@n
             w=np.einsum('ij,ij->j',n,v)     
             ww=n.T@np.array([self.offset_q]).T
-            boundaries=(self.Cs[0]*v[0,:]+self.second_order_C[1]*v[1,:]-self.Cs[-1]*v[-1,:]-self.second_order_C[-1]*v[-2,:])*self.U/2
-            return w.flatten()/2+ww.flatten()+boundaries
+            boundaries=(self.Cs[0]*v[0,:]+self.second_order_C[1]*v[1,:]-self.Cs[-1]*v[-1,:]-self.second_order_C[-1]*v[-2,:])*self.U/(2*self.Ec) #units of Ec
+            return w.flatten()/2+ww.flatten()+boundaries #units of Ec
         else:
             raise Exception('energy could not be calculated due to incorrect shape of charge array')
 
@@ -175,28 +181,29 @@ class CBTmontecarlo:
             DESCRIPTION.
 
         """
-        dE=self.energy(n2)-self.energy(n1)
+        dE=self.energy(n2)-self.energy(n1) #units of Ec
         limit1=1e-15
         limit2=1e15
-        # Gamma=dE/(1-np.exp(-dE/self.kBT))
+        # Gamma=dE/(1-np.exp(-dE*self.u))
         # return Gamma
         if dE.shape==(2*self.N,):
             Gamma=np.zeros_like(dE)
-            Gamma[(-dE/self.kBT>np.log(limit1)) & (-dE/self.kBT<np.log(limit2))]=dE[(-dE/self.kBT>np.log(limit1)) & (-dE/self.kBT<np.log(limit2))]/(1-np.exp(-dE[(-dE/self.kBT>np.log(limit1)) & (-dE/self.kBT<np.log(limit2))]/self.kBT))
-            Gamma[-dE/self.kBT<=np.log(limit1)]=dE[-dE/self.kBT<=np.log(limit1)]
-            Gamma[-dE/self.kBT>=np.log(limit2)]=-dE[-dE/self.kBT>=np.log(limit2)]*np.exp(dE[-dE/self.kBT>=np.log(limit2)]/self.kBT)
+            Gamma[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]=dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]*self.u))
+            Gamma[-dE*self.u<=np.log(limit1)]=dE[-dE*self.u<=np.log(limit1)]
+            Gamma[-dE*self.u>=np.log(limit2)]=-dE[-dE*self.u>=np.log(limit2)]*np.exp(dE[-dE*self.u>=np.log(limit2)]*self.u)
             print('updating transition rates')
+            Gamma=self.gi*Gamma
             self.gammas=Gamma
             return Gamma
         elif self.iterable(dE)==False:
             
-            if (-dE/self.kBT>np.log(limit1)) and (-dE/self.kBT<np.log(limit2)):
-                Gamma=dE/(1-np.exp(-dE/self.kBT))
-            elif (-dE/self.kBT<=np.log(limit1)):
+            if (-dE*self.u>np.log(limit1)) and (-dE*self.u<np.log(limit2)):
+                Gamma=dE/(1-np.exp(-dE*self.u))
+            elif (-dE*self.u<=np.log(limit1)):
                 Gamma=dE
-            elif (-dE/self.kBT>=np.log(limit2)):
-                Gamma=-dE*np.exp(dE/self.kBT)
-            
+            elif (-dE*self.u>=np.log(limit2)):
+                Gamma=-dE*np.exp(dE*self.u)
+            Gamma=self.gi*Gamma
             return Gamma
     
     def P(self,n):
@@ -243,22 +250,22 @@ class CBTmontecarlo:
         
         return index
     def dt(self,n):
-
+        factor_SI=e_SI/(self.N*self.Ec*self.Gt)
         try:
-            self.dts=1/(self.gammas[0:self.N]+self.gammas[self.N::])
+            self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
             return sum(self.dts)
         except Exception:
             self.transition_rate(self.Q(n),self.Q0(n))
-            self.dts=1/(self.gammas[0:self.N]+self.gammas[self.N::])
+            self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
             return sum(self.dts)
 
     def dQ(self,n):
         try:
-            self.dQ=sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas[0:self.N]+self.gammas[self.N::])
+            self.dQ=e_SI*sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas[0:self.N]+self.gammas[self.N::])
             return self.dQ
         except Exception:
             self.transition_rate(self.Q(n),self.Q0(n))
-            self.dQ=sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas[0:self.N]+self.gammas[self.N::])
+            self.dQ=e_SI*sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas[0:self.N]+self.gammas[self.N::])
             return self.dQ
     def plot_event_histograms(self,n,samples=None):
         if samples is None:
@@ -278,7 +285,8 @@ class CBTmontecarlo:
         plt.plot(self.P(n)[self.N::]/pl,label='renormalized P of left moving. (P(left)={:.3f} pct.)'.format(pl*100))
         plt.legend()
         plt.xlabel('site number')
-        
+    
+    
 
 if __name__=='__main__':
     
@@ -286,14 +294,17 @@ if __name__=='__main__':
     test=np.linspace(1,N,N)
 
     n0=-np.ones((N-1,))
-    Cs=np.ones((N,))
-    offset_C=-0*np.ones((N-1,))/100
-    offset_q=offset_C/1000
-    second_order_C=Cs/1000
-    U=10
-    kBT=1e-1
-    
-    CBT=CBTmontecarlo(N,offset_q,n0,U,kBT,Cs,offset_C,second_order_C)
+    Cs=np.ones((N,))*1e-2
+    offset_C=-0*np.ones((N-1,))*1e-4
+    offset_q=0*n0/N
+    second_order_C=0*Cs*1e-9
+    Ec=1e-6
+    Gt=2e-5
+    gi=np.ones((2*N,))
+    U=1e-2
+    T=1
+
+    CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi)
     # plt.figure()
     # plt.hist(CBT.pick_event(CBT.n0,10000),density=True,bins=2*CBT.N)
     # plt.plot(CBT.P(CBT.n0))
