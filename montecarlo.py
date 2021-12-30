@@ -158,7 +158,7 @@ class CBTmontecarlo:
         Qr=np.array([n]).T.repeat(self.N,axis=1)
         return np.concatenate((Qr,Qr),axis=1)
 
-    def transition_rate(self,n2,n1):
+    def update_transition_rate(self,n2,n1):
         """
         
 
@@ -178,22 +178,27 @@ class CBTmontecarlo:
         dE=self.energy(n2)-self.energy(n1)
         limit1=1e-15
         limit2=1e15
+        # Gamma=dE/(1-np.exp(-dE/self.kBT))
+        # return Gamma
         if dE.shape==(2*self.N,):
             Gamma=np.zeros_like(dE)
             Gamma[(-dE/self.kBT>np.log(limit1)) & (-dE/self.kBT<np.log(limit2))]=dE[(-dE/self.kBT>np.log(limit1)) & (-dE/self.kBT<np.log(limit2))]/(1-np.exp(-dE[(-dE/self.kBT>np.log(limit1)) & (-dE/self.kBT<np.log(limit2))]/self.kBT))
             Gamma[-dE/self.kBT<=np.log(limit1)]=dE[-dE/self.kBT<=np.log(limit1)]
-            Gamma[-dE/self.kBT>=np.log(limit2)]=dE[-dE/self.kBT>=np.log(limit2)]*np.exp(dE[-dE/self.kBT>=np.log(limit2)]/self.kBT)
+            Gamma[-dE/self.kBT>=np.log(limit2)]=-dE[-dE/self.kBT>=np.log(limit2)]*np.exp(dE[-dE/self.kBT>=np.log(limit2)]/self.kBT)
+            print('updating transition rates')
+            self.gammas=Gamma
             return Gamma
-        elif self.iterable(dE):
+        elif self.iterable(dE)==False:
             
             if (-dE/self.kBT>np.log(limit1)) and (-dE/self.kBT<np.log(limit2)):
                 Gamma=dE/(1-np.exp(-dE/self.kBT))
             elif (-dE/self.kBT<=np.log(limit1)):
                 Gamma=dE
             elif (-dE/self.kBT>=np.log(limit2)):
-                Gamma=dE*np.exp(dE/self.kBT)
+                Gamma=-dE*np.exp(dE/self.kBT)
+            
             return Gamma
-
+    
     def P(self,n):
         """
         
@@ -209,9 +214,13 @@ class CBTmontecarlo:
             DESCRIPTION.
 
         """
-        p=self.transition_rate(self.Q(n),self.Q0(n))
         
-        return p/sum(p)
+        try:
+            p=self.gammas
+            return p/sum(p)
+        except Exception:
+            p=self.update_transition_rate(self.Q(n),self.Q0(n))
+            return p/sum(p)
 
     def pick_event(self,n,k):
         """
@@ -226,14 +235,50 @@ class CBTmontecarlo:
 
         Returns
         -------
-        index : indices of events chosen
+        index : (k,)-array of indices of events chosen
             DESCRIPTION.
 
         """
         index=random.choices(np.arange(2*self.N),weights=self.P(n),k=k)
         
         return index
+    def dt(self,n):
 
+        try:
+            self.dts=1/(self.gammas[0:self.N]+self.gammas[self.N::])
+            return sum(self.dts)
+        except Exception:
+            self.transition_rate(self.Q(n),self.Q0(n))
+            self.dts=1/(self.gammas[0:self.N]+self.gammas[self.N::])
+            return sum(self.dts)
+
+    def dQ(self,n):
+        try:
+            self.dQ=sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas[0:self.N]+self.gammas[self.N::])
+            return self.dQ
+        except Exception:
+            self.transition_rate(self.Q(n),self.Q0(n))
+            self.dQ=sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas[0:self.N]+self.gammas[self.N::])
+            return self.dQ
+    def plot_event_histograms(self,n,samples=None):
+        if samples is None:
+            samples=100*self.N
+        indices=np.array(self.pick_event(n,samples))
+        indices_rl=indices[indices<self.N]
+        indices_lr=indices[indices>=self.N]-self.N
+        plt.figure()
+        plt.hist(indices_rl,density=True,bins=self.N,label='total # of events={}'.format(len(indices_rl)))
+        pr=sum(self.P(n)[0:self.N])/sum(self.P(n))
+        plt.plot(self.P(n)[0:self.N]/pr,label='renormalized P of right moving. (P(right)={:.3f} pct.)'.format(pr*100))
+        plt.legend()
+        plt.xlabel('site number')
+        plt.figure()
+        plt.hist(indices_lr,density=True,bins=self.N,label='total # of events={}'.format(len(indices_lr)))
+        pl=sum(self.P(n)[self.N::])/sum(self.P(n))
+        plt.plot(self.P(n)[self.N::]/pl,label='renormalized P of left moving. (P(left)={:.3f} pct.)'.format(pl*100))
+        plt.legend()
+        plt.xlabel('site number')
+        
 
 if __name__=='__main__':
     
@@ -242,13 +287,14 @@ if __name__=='__main__':
 
     n0=-np.ones((N-1,))
     Cs=np.ones((N,))
-    offset_C=-np.ones((N-1,))/100
-    offset_q=offset_C/10
-    second_order_C=0*Cs/1000
+    offset_C=-0*np.ones((N-1,))/100
+    offset_q=offset_C/1000
+    second_order_C=Cs/1000
     U=10
-    kBT=1e-0
+    kBT=1e-1
     
     CBT=CBTmontecarlo(N,offset_q,n0,U,kBT,Cs,offset_C,second_order_C)
-    plt.figure()
-    plt.hist(CBT.pick_event(CBT.n0,10000),density=True,bins=2*CBT.N)
-    plt.plot(CBT.P(CBT.n0))
+    # plt.figure()
+    # plt.hist(CBT.pick_event(CBT.n0,10000),density=True,bins=2*CBT.N)
+    # plt.plot(CBT.P(CBT.n0))
+    CBT.plot_event_histograms(CBT.n0)
