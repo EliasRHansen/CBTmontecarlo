@@ -13,6 +13,7 @@ from copy import copy
 import random as random
 from time import time
 from joblib import Parallel,delayed
+from derivative import dxdt
 #########Inpu
 kB=8.617*1e-5
 e_SI=1.602*1e-19
@@ -154,9 +155,9 @@ class CBTmontecarlo:
             
             v=self.Cinv@n
             w=np.einsum('ij,ij->j',n,v)     
-            ww=n.T@np.array([self.offset_q]).T
+            # ww=n.T@np.array([self.offset_q]).T
             boundaries=(self.Cs[0]*v[0,:]+self.second_order_C[1]*v[1,:]-self.Cs[-1]*v[-1,:]-self.second_order_C[-1]*v[-2,:])*self.U/(2*self.Ec) #units of Ec. Negative sign because the matrix elements have funny signs.
-            E=w.flatten()/2+ww.flatten()+boundaries #units of Ec
+            E=w.flatten()/2+boundaries#+ww.flatten() #units of Ec
 
             if boundary_work:
                 E[0]=E[0]+self.U/(2*self.Ec)
@@ -410,15 +411,17 @@ class CBTmontecarlo:
     def step(self,store_data=False):
         neff=self.neff_f(self.n)
         self.update_transition_rate(self.Q(neff),self.Q0(neff))
-        self.dtp.append(self.dt_f(neff))
-        self.dQp.append(self.dQ_f(neff))
+        if store_data:
+            self.dtp.append(self.dt_f(neff))
+            self.dQp.append(self.dQ_f(neff))
         self.index=self.pick_event(neff,1)
         Q_new=self.Q(self.n)
         n_new=Q_new[:,self.index[0]]
         self.n=n_new
-        self.ntot_f()
         if store_data:
             self.store_n()
+            self.ntot_f()
+
     
     def __call__(self,number_of_steps=1,transient=0,print_every=None):
         if print_every is None:
@@ -428,13 +431,13 @@ class CBTmontecarlo:
             if print_every != 0:
                 if i%print_every==0:
                     print('{:.1f}'.format(i*100/number_of_steps)+' pct.')
-                    self.update_potentials()
-                    # ax2.plot(self.potentials*self.Ec,color=[0,0,i/number_of_steps])
-                    # ax2.set_ylabel('potential [eV]')
+
                     self.step(store_data=True)
+                else:
+                    self.step(store_data=False)
             else:
                 self.step(store_data=False)
-        final_current=np.array(CBT.dQp)[transient::]/np.array(CBT.dtp)[transient::]
+        final_current=np.array(self.dQp)[transient::]/np.array(self.dtp)[transient::]
         return final_current
         
     # def initialize_many(self,n,k):
@@ -461,7 +464,7 @@ if __name__=='__main__':
     N=100
     test=np.linspace(1,N,N)
 
-    n0=np.array(random.choices(np.arange(11)-5,k=N-1,weights=np.exp(-0.2*(np.arange(11)-5)**2)))#-np.ones((N-1,))*10
+    n0=0*np.array(random.choices(np.arange(11)-5,k=N-1,weights=np.exp(-0.2*(np.arange(11)-5)**2)))#-np.ones((N-1,))*10
     # n0[40:60]=n0[40:60]+100
     Cs=np.ones((N,))/2
     offset_C=-0*np.ones((N-1,))*1e-4
@@ -472,7 +475,15 @@ if __name__=='__main__':
     gi=np.ones((2*N,))
     U=-5e-3
     T=0.03
-    Us=np.linspace(-10e-3,10e-3,1000)
+    
+    
+    points=40
+    lim=6e-3
+    Us=np.linspace(-lim,lim,points)
+    # Us=np.concatenate((Us,np.linspace(-lim,lim,points)+5e-6))
+    # Us=np.concatenate((Us,np.linspace(-lim,lim,points)-5e-6))
+    Us=np.concatenate((Us,np.linspace(-lim,lim,points)-15e-6))
+    Us=np.concatenate((Us,np.linspace(-lim,lim,points)+15e-6))
     currentss=[]
     a=time()
     # def f(number_of_steps,transient):
@@ -484,25 +495,39 @@ if __name__=='__main__':
         number_of_steps=10000
         transient=0
         currents=CBT(number_of_steps,transient,print_every=100)
-        ax1.plot(currents)
-        ax1.set_ylabel('current')
+        # ax1.plot(currents)
+        # ax1.set_ylabel('current')
         currentss.append(currents)
         # second_order_C=Cs*1e-2
     currents=np.array(currentss)
     currentm=[]
     currentstd=[]
     for c in np.arange(len(currentss)):
-        currentm.append(np.mean(currentss[c][50::]))
-        currentstd.append(np.std(currentss[c][50::]))
+        currentm.append(np.mean(currentss[c][5::]))
+        currentstd.append(np.std(currentss[c][5::]))
     currentm=np.array(currentm)
     currentstd=np.array(currentstd)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     plt.figure()
     plt.errorbar(Us,currentm,yerr=currentstd,fmt='.',label='data')
     plt.legend()
     plt.ylabel('current')
     plt.xlabel('bias voltage')
     plt.figure()
-    plt.errorbar(Us[0:-1],np.diff(currentm)/np.diff(Us),yerr=np.sqrt(2)*currentstd[0:-1]/np.diff(Us),fmt='.',label='data')
+    Us=np.linspace(-10e-3,10e-3,1000)
+    G3 = dxdt(currentm[::20],Us[::20], kind="finite_difference", k=2)
+    plt.errorbar(Us[0:-1],np.diff(currentm)/np.diff(Us),fmt='.',label='data')
+    plt.errorbar(Us[::20],G3,fmt='.',label='data')
+    
     plt.legend()
     plt.ylabel('G')
     plt.xlabel('bias voltage')
