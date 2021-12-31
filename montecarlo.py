@@ -42,7 +42,8 @@ class CBTmontecarlo:
         self.dQp=[]
         dm1=np.roll(dm1,-1)
         dm2=np.roll(dm2,-1)
-        
+        self.ntot=[sum(self.n0)]
+        self.n_history=[self.n0]
         d0=np.roll(dm2,2)+np.roll(dm1,1)+np.roll(d1,-1)+np.roll(d2,-2)+np.concatenate((self.offset_C,np.zeros((2,))))
         
         data=np.array([-dm2,-dm1,d0,-d1,-d2])
@@ -54,8 +55,8 @@ class CBTmontecarlo:
         # potentials=np.array(potentials,dtype='float64')
         potentials=list(potentials.flatten())
         
-        potentials.append(-self.U/(2*self.Ec))
         potentials.append(self.U/(2*self.Ec))
+        potentials.append(-self.U/(2*self.Ec))
         self.potentials=np.roll(np.array(potentials),1)
         dataM=np.array([[-1]*self.N,[1]*self.N])
         offsetsM=np.array([0,1])
@@ -82,6 +83,27 @@ class CBTmontecarlo:
         self.neff[-1]=self.neff[-1]+self.Cs[-1]*self.U/2
         self.neff[-2]=self.neff[-2]+self.second_order_C[-1]*self.U/2
         return self.neff
+    def neff_finv(self,neff):
+        """
+        
+
+        Parameters
+        ----------
+        n : charge array
+            DESCRIPTION.
+
+        Returns
+        -------
+        charge array adjusted for the fact that the potential at the boundaries are not otherwise included.
+            DESCRIPTION.
+
+        """
+        n=copy(neff)
+        n[0]=n[0]+self.Cs[0]*self.U/2
+        n[1]=n[1]+self.second_order_C[1]*self.U/2
+        n[-1]=n[-1]-self.Cs[-1]*self.U/2
+        n[-2]=n[-2]-self.second_order_C[-1]*self.U/2
+        return n
     def neff_fnD(self,n):
         """
         
@@ -103,7 +125,7 @@ class CBTmontecarlo:
         self.neffnD[-1,:]=self.neffnD[-1,:]+self.Cs[-1]*self.U/2
         self.neffnD[-2,:]=self.neffnD[-2,:]+self.second_order_C[-1]*self.U/2
         return self.neffnD
-    def energy(self,n):
+    def energy(self,n,boundary_work=True):
         """
         
 
@@ -126,13 +148,23 @@ class CBTmontecarlo:
         if n.shape==(self.N-1,):
             v=self.Cinv@np.array([n]).T
             boundaries=(self.Cs[0]*v[0]+self.second_order_C[1]*v[1]-self.Cs[-1]*v[-1]-self.second_order_C[-1]*v[-2])*self.U/(2*self.Ec) #units of Ec
-            return np.sum(n*(v.flatten()/2+self.offset_q))+boundaries[0] #units of Ec
+            E=np.sum(n*(v.flatten()/2+self.offset_q))+boundaries[0]
+            return E #units of Ec
         elif n.shape==(self.N-1,2*self.N):
+            
             v=self.Cinv@n
             w=np.einsum('ij,ij->j',n,v)     
             ww=n.T@np.array([self.offset_q]).T
-            boundaries=(self.Cs[0]*v[0,:]+self.second_order_C[1]*v[1,:]-self.Cs[-1]*v[-1,:]-self.second_order_C[-1]*v[-2,:])*self.U/(2*self.Ec) #units of Ec
-            return w.flatten()/2+ww.flatten()+boundaries #units of Ec
+            boundaries=(self.Cs[0]*v[0,:]+self.second_order_C[1]*v[1,:]-self.Cs[-1]*v[-1,:]-self.second_order_C[-1]*v[-2,:])*self.U/(2*self.Ec) #units of Ec. Negative sign because the matrix elements have funny signs.
+            E=w.flatten()/2+ww.flatten()+boundaries #units of Ec
+
+            if boundary_work:
+                E[0]=E[0]+self.U/(2*self.Ec)
+                E[N-1]=E[N-1]+self.U/(2*self.Ec)
+                E[N]=E[N]-self.U/(2*self.Ec)
+                E[-1]=E[-1]-self.U/(2*self.Ec)
+
+            return E #units of Ec
         else:
             raise Exception('energy could not be calculated due to incorrect shape of charge array')
     # def energy(self,n):
@@ -194,7 +226,7 @@ class CBTmontecarlo:
         except TypeError:
             return False
 
-    def Q(self,n):
+    def Q(self,n,reverse=False):
         """
         
 
@@ -209,9 +241,13 @@ class CBTmontecarlo:
             DESCRIPTION.
 
         """
+        
         Qr=np.array([n]).T.repeat(self.N,axis=1)+self.M
         Ql=np.array([n]).T.repeat(self.N,axis=1)-self.M
-        self.Q_new=np.concatenate((Qr,Ql),axis=1)
+        if reverse==False:
+            self.Q_new=np.concatenate((Qr,Ql),axis=1)
+        else:
+            self.Q_new=np.concatenate((Ql,Qr),axis=1)
         return np.concatenate((Qr,Ql),axis=1)
     def Q0(self,n):
         """
@@ -250,10 +286,11 @@ class CBTmontecarlo:
             DESCRIPTION.
 
         """
-        dE=self.energy(n2)-self.energy(n1) #units of Ec
+        dE=-(self.energy(n2)-self.energy(n1,boundary_work=False)) #units of Ec
         limit1=1e-15
         limit2=1e15
         # Gamma=dE/(1-np.exp(-dE*self.u))
+        # self.gammas=Gamma
         # return Gamma
         if dE.shape==(2*self.N,):
             Gamma=np.zeros_like(dE)
@@ -275,7 +312,7 @@ class CBTmontecarlo:
             # Gamma=Gamma
             return Gamma
     
-    def P(self,n):
+    def P(self,n,update=False):
         """
         
 
@@ -290,13 +327,17 @@ class CBTmontecarlo:
             DESCRIPTION.
 
         """
-        
-        try:
-            p=self.gammas
-            return p/sum(p)
-        except Exception:
-            p=self.update_transition_rate(self.Q(n),self.Q0(n))
-            return p/sum(p)
+        if update==False:
+            try:
+                p=self.gammas
+                return p/sum(p)
+            except Exception:
+                p=self.update_transition_rate(self.Q(n),self.Q0(n))
+                return p/sum(p)
+        else:
+                p=self.update_transition_rate(self.Q(n),self.Q0(n))
+                return p/sum(p)
+
 
     def pick_event(self,n,k):
         """
@@ -335,12 +376,16 @@ class CBTmontecarlo:
 
     def dQ_f(self,n):
         try:
-            self.dQ=e_SI*sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas)
+            self.dQ=-e_SI*sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas)
             return self.dQ
         except Exception:
             self.update_transition_rate(self.Q(n),self.Q0(n))
-            self.dQ=e_SI*sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas)
+            self.dQ=-e_SI*sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas)
             return self.dQ
+    def ntot_f(self):
+        self.ntot.append(sum(self.n))
+    def store_n(self):
+        self.n_history.append(self.n)
     def plot_event_histograms(self,n,samples=None):
         if samples is None:
             samples=100*self.N
@@ -362,8 +407,8 @@ class CBTmontecarlo:
     def update_potentials(self):
         v=self.Cinv@np.array([self.n]).T
         self.potentials[1:-1]=v.flatten()
-    def step(self):
-        neff=self.n#self.neff_f(self.n)
+    def step(self,store_data=False):
+        neff=self.neff_f(self.n)
         self.update_transition_rate(self.Q(neff),self.Q0(neff))
         self.dtp.append(self.dt_f(neff))
         self.dQp.append(self.dQ_f(neff))
@@ -371,16 +416,24 @@ class CBTmontecarlo:
         Q_new=self.Q(self.n)
         n_new=Q_new[:,self.index[0]]
         self.n=n_new
+        self.ntot_f()
+        if store_data:
+            self.store_n()
     
-    def __call__(self,number_of_steps,transient):
-        fig2,ax2=plt.subplots()
+    def __call__(self,number_of_steps=1,transient=0,print_every=None):
+        if print_every is None:
+            print_every=int(number_of_steps/100+1)
+        # fig2,ax2=plt.subplots()
         for i in np.arange(number_of_steps):
-            
-            if i%100==0:
-                print('{:.1f}'.format(i*100/number_of_steps)+' pct.')
-                self.update_potentials()
-                ax2.plot(self.potentials,color=[0,0,i/number_of_steps])
-            CBT.step()
+            if print_every != 0:
+                if i%print_every==0:
+                    print('{:.1f}'.format(i*100/number_of_steps)+' pct.')
+                    self.update_potentials()
+                    # ax2.plot(self.potentials*self.Ec,color=[0,0,i/number_of_steps])
+                    # ax2.set_ylabel('potential [eV]')
+                    self.step(store_data=True)
+            else:
+                self.step(store_data=False)
         final_current=np.array(CBT.dQp)[transient::]/np.array(CBT.dtp)[transient::]
         return final_current
         
@@ -408,28 +461,51 @@ if __name__=='__main__':
     N=100
     test=np.linspace(1,N,N)
 
-    n0=np.ones((N-1,))
-    Cs=np.ones((N,))*1e-2
+    n0=np.array(random.choices(np.arange(11)-5,k=N-1,weights=np.exp(-0.2*(np.arange(11)-5)**2)))#-np.ones((N-1,))*10
+    # n0[40:60]=n0[40:60]+100
+    Cs=np.ones((N,))/2
     offset_C=-0*np.ones((N-1,))*1e-4
     offset_q=0*n0/N
-    second_order_C=0*Cs*1e-9
+    second_order_C=0*Cs*1e-1
     Ec=1e-6
     Gt=2e-5
     gi=np.ones((2*N,))
-    U=1e-2
-    T=0.3
-    fig1,ax1=plt.subplots()
+    U=-5e-3
+    T=0.03
+    Us=np.linspace(-10e-3,10e-3,1000)
     currentss=[]
     a=time()
     # def f(number_of_steps,transient):
     #     CBT=
-    for _ in np.arange(1):
+    fig1,ax1=plt.subplots()
+    for U in Us:
+        print(U)
         CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi)
-        number_of_steps=3000
+        number_of_steps=10000
         transient=0
-        currents=CBT(number_of_steps,transient)
+        currents=CBT(number_of_steps,transient,print_every=100)
         ax1.plot(currents)
+        ax1.set_ylabel('current')
         currentss.append(currents)
+        # second_order_C=Cs*1e-2
+    currents=np.array(currentss)
+    currentm=[]
+    currentstd=[]
+    for c in np.arange(len(currentss)):
+        currentm.append(np.mean(currentss[c][50::]))
+        currentstd.append(np.std(currentss[c][50::]))
+    currentm=np.array(currentm)
+    currentstd=np.array(currentstd)
+    plt.figure()
+    plt.errorbar(Us,currentm,yerr=currentstd,fmt='.',label='data')
+    plt.legend()
+    plt.ylabel('current')
+    plt.xlabel('bias voltage')
+    plt.figure()
+    plt.errorbar(Us[0:-1],np.diff(currentm)/np.diff(Us),yerr=np.sqrt(2)*currentstd[0:-1]/np.diff(Us),fmt='.',label='data')
+    plt.legend()
+    plt.ylabel('G')
+    plt.xlabel('bias voltage')
     b=time()
     # processed_list = Parallel(n_jobs=8,verbose=50)(delayed(f)(j,self) for j in np.arange(int(len(self.z_SI))))
     print(b-a)
@@ -441,8 +517,19 @@ if __name__=='__main__':
     #         print(i)
     #         plt.plot(CBT.n,color=[0,0,i/number_of_steps])
     #     CBT.step()
-
-    # CBT.plot_event_histograms(CBT.n0)
+    
+    # CBT.plot_event_histograms(CBT.n_history[0])
+    # plt.figure()
+    # plt.plot(CBT.ntot)
+    # plt.ylabel('charge')
+    # plt.figure()
+    # plt.ylabel('probability')
+    # for s in np.arange(len(CBT.n_history)):
+    #     plt.plot(CBT.P(CBT.n_history[s],update=True),color=[0,0,s/len(CBT.n_history)])
+    # plt.figure()
+    # plt.ylabel('charge')
+    # s=1
+    # plt.plot(CBT.n_history[s],color=[0,0,s/len(CBT.n_history)])
     # plt.figure()
     # plt.plot(np.array(CBT.dtp))
     # plt.figure()
