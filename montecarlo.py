@@ -16,24 +16,26 @@ from joblib import Parallel,delayed
 from derivative import dxdt
 #########Inpu
 kB=8.617*1e-5
+
 e_SI=1.602*1e-19
+
 class CBTmontecarlo:
     
     def __init__(self,N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi):
-        self.Ec=2*Ec.astype('float32') #units of eV
+        self.Ec=2*Ec #units of eV
         self.N=N
         self.n0=n0.astype('float32') #units of number of electrons
         self.n=n0.astype('float32')
         self.Cs=Cs.astype('float32') #units of e/Ec=160 [fmF]/Ec[microeV]
         self.second_order_C=second_order_C.astype('float32')#units of e/Ec=160[fmF]/Ec[microeV]
-        self.U=U.astype('float32') #units of eV
+        self.U=U #units of eV
         self.offset_q=offset_q.astype('float32') #units of number of electrons
         self.offset_C=offset_C.astype('float32')#units of e/Ec=160[fmF]/Ec[microeV]
         self.neff=self.neff_f(self.n0)
         self.kBT=kB*T #units of eV
-        self.u=self.Ec/(2*self.kBT.astype('float32'))
-        self.Gt=Gt.astype('float32')
-        normalization=sum(1/gi).astype('float32')
+        self.u=self.Ec/(2*self.kBT)
+        self.Gt=Gt
+        normalization=sum(1/gi)
         self.gi=gi.astype('float32')*normalization
         d1=np.concatenate((self.Cs,np.zeros((1,))))
         dm1=np.concatenate((self.Cs,np.zeros((1,))))
@@ -42,6 +44,7 @@ class CBTmontecarlo:
         self.pi=np.ones((self.N,))/N
         self.dtp=[]
         self.dQp=[]
+        self.Ip=[]
         dm1=np.roll(dm1,-1)
         dm2=np.roll(dm2,-1)
         self.ntot=[sum(self.n0)]
@@ -320,12 +323,11 @@ class CBTmontecarlo:
         """
         limit1=1e-9
         limit2=1e9
+        dE=-(self.energy(n2)-self.energy(n1,boundary_work=False)) #units of Ec
         if number_of_concurrent==1:
-            dE=-(self.energy(n2)-self.energy(n1,boundary_work=False)) #units of Ec
+            
 
-            # Gamma=dE/(1-np.exp(-dE*2*self.u))
-            # self.gammas=Gamma
-            # return Gamma
+
             if dE.shape==(2*self.N,):
                 Gamma=np.zeros_like(dE)
                 Gamma[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<np.log(limit2))]=dE[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<np.log(limit2))]*2*self.u))
@@ -353,6 +355,7 @@ class CBTmontecarlo:
             # print('updating transition rates')
             # Gamma=Gamma
             self.gammas=Gamma
+            self.gammas2=Gamma.reshape(number_of_concurrent,2*self.N)
             return Gamma
     
     def P(self,n,update=False,number_of_concurrent=1):
@@ -412,20 +415,32 @@ class CBTmontecarlo:
             
             return indices
     
-    def dt_f(self,n):
+    def dt_f(self,n,number_of_concurrent=1):
         factor_SI=e_SI/(self.N*self.Ec*self.Gt)
-        try:
-            # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
-            self.dts=factor_SI/sum(self.gammas)
-            return self.dts
-            # return sum(self.dts)
-        except Exception:
-            self.update_transition_rate(self.Q(n),self.Q0(n))
-            # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
-            return self.dts
-            self.dts=factor_SI/sum(self.gammas)
-            # return sum(self.dts)
-
+        if number_of_concurrent==1:
+            try:
+                # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
+                self.dts=factor_SI/sum(self.gammas)
+                return self.dts
+                # return sum(self.dts)
+            except Exception:
+                self.update_transition_rate(self.Q(n),self.Q0(n))
+                # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
+                return self.dts
+                self.dts=factor_SI/sum(self.gammas)
+                # return sum(self.dts)
+        else:
+            try:
+                # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
+                self.dts=factor_SI/sum(self.gammas)
+                return self.dts
+                # return sum(self.dts)
+            except Exception:
+                self.update_transition_rate(self.Q(n),self.Q0(n))
+                # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
+                return self.dts
+                self.dts=factor_SI/sum(self.gammas)
+                # return sum(self.dts)
     def dQ_f(self,n):
         
         try:
@@ -488,6 +503,7 @@ class CBTmontecarlo:
         if store_data:
             self.dtp.append(self.dt_f(neff))
             self.dQp.append(self.dQ_f(neff))
+            # self.Ip.append(np.sum(np.array(self.dQp))/np.sum(np.array(self.dtp)))
         self.indices=self.pick_event(neff,1,number_of_concurrent)
         Q_new=self.Q(self.ns)
         n_new=Q_new[:,self.indices]
@@ -512,8 +528,8 @@ class CBTmontecarlo:
                         self.step(store_data=False)
                 else:
                     self.step(store_data=False)
-            final_current=np.array(self.dQp)[transient::]/np.array(self.dtp)[transient::]
-            return final_current
+            self.final_current=np.sum(np.array(self.dQp)[transient::])/np.sum(np.array(self.dtp)[transient::])
+            return self.final_current,np.array(self.dQp),np.array(self.dtp)
         else:
             print('not implemented')
     # def initialize_many(self,n,k):
@@ -549,27 +565,29 @@ if __name__=='__main__':
     Ec=4e-6
     Gt=2e-5
     gi=np.ones((2*N,))
-    U=-5e-3
-    T=0.075
+
+    T=0.015
     FWHM=5.439*kB*T*N
     
     points=21
     lim=3.5*FWHM
-    dV=FWHM/50
+    dV=FWHM/100
     # Us=np.linspace(-lim,lim,points)
     # Us=np.concatenate((Us,np.linspace(-lim,lim,points)+5e-6))
     # Us=np.concatenate((Us,np.linspace(-lim,lim,points)-5e-6))
     Us=np.linspace(-lim,lim,points)-dV
     Us=np.concatenate((Us,np.linspace(-lim,lim,points)))
     Us=np.concatenate((Us,np.linspace(-lim,lim,points)+dV))
+    U=Us[2]
     # currentss=[]
     a=time()
     def f(U):
         CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi)
-        number_of_steps=500000
+        number_of_steps=20000
         transient=10
-        currents=CBT(number_of_steps,transient,print_every=100)
-        return currents
+        current,_,_=CBT(number_of_steps,transient,print_every=100)
+        return current
+    
     # fig1,ax1=plt.subplots()
     # for U in Us:
     #     print(U)
@@ -582,31 +600,36 @@ if __name__=='__main__':
     #     currentss.append(currents)
     #     # second_order_C=Cs*1e-2
     
-    currentss=Parallel(n_jobs=8,verbose=50)(delayed(f)(U) for U in Us)
-    currents=np.array(currentss)
-    currentm=[]
-    currentstd=[]
-    for c in np.arange(len(currentss)):
-        currentm.append(np.mean(currentss[c]))
-        currentstd.append(np.std(currentss[c]))
-    currentm=np.array(currentm)
-    currentstd=np.array(currentstd)
+    # current=Parallel(n_jobs=8,verbose=50)(delayed(f)(U) for U in Us)
+    
+    
+    
+    
+    # currents=np.array(currentss)
+    # currentm=[]
+    # currentstd=[]
+    # for c in np.arange(len(currentss)):
+    #     currentm.append(np.mean(currentss[c]))
+    #     currentstd.append(np.std(currentss[c]))
+    # currentm=np.array(currentm)
+    # currentstd=np.array(currentstd)
     
     # currentmstack=np.array([currentm[0:points],currentm[points:2*points],currentm[2*points:3*points]])
     # currentstdstack=np.array([currentstd[0:points],currentstd[points:2*points],currentstd[2*points:3*points]])
     # gm=(currentm[2*points:3*points]-currentm[0:points])/(Us[2*points:3*points]-Us[0:points])
     
-    currentmstack=np.array([currentm[0:points],currentm[points:2*points]])
-    currentstdstack=np.array([currentstd[0:points],currentstd[points:2*points]])
-    gm=(currentm[points:2*points]-currentm[0:points])/(Us[points:2*points]-Us[0:points])
+    # currentmstack=np.array([currentm[0:points],currentm[points:2*points]])
+    # currentstdstack=np.array([currentstd[0:points],currentstd[points:2*points]])
+    
+    gm1=(current[2*points:3*points]-current[0:points])/(Us[2*points:3*points]-Us[0:points])
     
     
     
-    plt.figure()
-    plt.plot(Us[points:2*points]-dV,gm,'.')
+    # plt.figure()
+    # plt.plot(Us[points:2*points],gm1,'.')
     
-    plt.figure()
-    plt.semilogy(Us[points:2*points]-dV,currentstd[points:2*points])
+    # plt.figure()
+    # plt.semilogy(Us[points:2*points]-dV,currentstd[points:2*points])
     
     
     def CBT_model_g(x):
@@ -619,8 +642,8 @@ if __name__=='__main__':
         return Gt*(1-Ec*CBT_model_g(V/(N*kB*T))/(kB*T))
     
     plt.figure()
-    plt.plot(Us[points:2*points],gm,'.')
-    plt.plot(np.linspace(Us[0],Us[-1],1000)+dV,CBT_model_G(np.linspace(Us[0],Us[-1],1000)))
+    plt.plot(Us[points:2*points],gm1,'.')
+    plt.plot(np.linspace(Us[0],Us[-1],1000),CBT_model_G(np.linspace(Us[0],Us[-1],1000)))
     
     # plt.figure()
     # plt.errorbar(Us,currentm,yerr=currentstd,fmt='.',label='data')
