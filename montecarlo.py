@@ -14,6 +14,7 @@ import random as random
 from time import time
 from joblib import Parallel,delayed
 from derivative import dxdt
+import einops as eo
 #########Inpu
 kB=8.617*1e-5
 
@@ -21,22 +22,23 @@ e_SI=1.602*1e-19
 
 class CBTmontecarlo:
     
-    def __init__(self,N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi):
+    def __init__(self,N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64'):
         self.Ec=2*Ec #units of eV
         self.N=N
-        self.n0=n0.astype('float32') #units of number of electrons
-        self.n=n0.astype('float32')
-        self.Cs=Cs.astype('float32') #units of e/Ec=160 [fmF]/Ec[microeV]
-        self.second_order_C=second_order_C.astype('float32')#units of e/Ec=160[fmF]/Ec[microeV]
+        self.n0=n0.astype(dtype) #units of number of electrons
+        self.n=n0.astype(dtype)
+        self.Cs=Cs.astype(dtype) #units of e/Ec=160 [fmF]/Ec[microeV]
+        self.second_order_C=second_order_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
         self.U=U #units of eV
-        self.offset_q=offset_q.astype('float32') #units of number of electrons
-        self.offset_C=offset_C.astype('float32')#units of e/Ec=160[fmF]/Ec[microeV]
+        self.offset_q=offset_q.astype(dtype) #units of number of electrons
+        self.offset_C=offset_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
         self.neff=self.neff_f(self.n0)
         self.kBT=kB*T #units of eV
         self.u=self.Ec/(2*self.kBT)
         self.Gt=Gt
+        self.dtype=dtype
         normalization=sum(1/gi)
-        self.gi=gi.astype('float32')*normalization
+        self.gi=gi.astype(dtype)*normalization
         d1=np.concatenate((self.Cs,np.zeros((1,))))
         dm1=np.concatenate((self.Cs,np.zeros((1,))))
         d2=np.concatenate((self.second_order_C[0:-1],np.zeros((2,))))
@@ -44,6 +46,8 @@ class CBTmontecarlo:
         self.pi=np.ones((self.N,))/N
         self.dtp=[]
         self.dQp=[]
+        self.dtp2=[]
+        self.dQp2=[]
         self.Ip=[]
         dm1=np.roll(dm1,-1)
         dm2=np.roll(dm2,-1)
@@ -54,18 +58,18 @@ class CBTmontecarlo:
         data=np.array([-dm2,-dm1,d0,-d1,-d2])
         data=data[:,0:-2]
         offsets=np.array([-2,-1,0,1,2])
-        self.C=sparse.dia_matrix((data,offsets),shape=(N-1,N-1),dtype='float32')
+        self.C=sparse.dia_matrix((data,offsets),shape=(N-1,N-1),dtype=dtype)
         self.Cinv=inv(sparse.csc_matrix(self.C)).toarray()
-        potentials=self.Cinv@np.array([self.n],dtype='float32').T
+        potentials=self.Cinv@np.array([self.n],dtype=dtype).T
         # potentials=np.array(potentials,dtype='float64')
         potentials=list(potentials.flatten())
         
         potentials.append(self.U/(2*self.Ec))
         potentials.append(-self.U/(2*self.Ec))
-        self.potentials=np.roll(np.array(potentials,dtype='float32'),1)
+        self.potentials=np.roll(np.array(potentials,dtype=dtype),1)
         dataM=np.array([[-1]*self.N,[1]*self.N])
         offsetsM=np.array([0,1])
-        self.M=sparse.dia_matrix((dataM,offsetsM),shape=(self.N-1,self.N),dtype='float32').toarray()
+        self.M=sparse.dia_matrix((dataM,offsetsM),shape=(self.N-1,self.N),dtype=dtype).toarray()
     
     def neff_f(self,n):
         """
@@ -156,7 +160,7 @@ class CBTmontecarlo:
                 boundaries=(self.Cs[0]*v[0]+self.second_order_C[1]*v[1]-self.Cs[-1]*v[-1]-self.second_order_C[-1]*v[-2])*self.U/(2*self.Ec) #units of Ec
                 E=np.sum(n*(v.flatten()/2+self.offset_q))+boundaries[0]
                 return E #units of Ec
-            elif n.shape==(self.N-1,2*self.N):
+            elif n.ndim==2:
                 
                 v=self.Cinv@n 
                 # v=np.einsum('ij,jl->il',A,n)
@@ -164,12 +168,16 @@ class CBTmontecarlo:
                 # ww=n.T@np.array([self.offset_q]).T
                 boundaries=(self.Cs[0]*v[0,:]+self.second_order_C[1]*v[1,:]-self.Cs[-1]*v[-1,:]-self.second_order_C[-1]*v[-2,:])*self.U/(2*self.Ec) #units of Ec. Negative sign because the matrix elements have funny signs.
                 E=w.flatten()/2+boundaries#+ww.flatten() #units of Ec
-    
                 if boundary_work:
-                    E[0]=E[0]+self.U/(2*self.Ec)
-                    E[N-1]=E[N-1]+self.U/(2*self.Ec)
-                    E[N]=E[N]-self.U/(2*self.Ec)
-                    E[-1]=E[-1]-self.U/(2*self.Ec)
+                    E[::2*self.N]=E[::2*self.N]+self.U/(2*self.Ec)
+                    E[self.N-1::2*self.N]=E[self.N-1::2*self.N]+self.U/(2*self.Ec)
+                    E[self.N::2*self.N]=E[self.N::2*self.N]-self.U/(2*self.Ec)
+                    E[2*self.N-1::2*self.N]=E[2*self.N-1::2*self.N]-self.U/(2*self.Ec)
+                # if boundary_work:
+                #     E[0]=E[0]+self.U/(2*self.Ec)
+                #     E[N-1]=E[N-1]+self.U/(2*self.Ec)
+                #     E[N]=E[N]-self.U/(2*self.Ec)
+                #     E[-1]=E[-1]-self.U/(2*self.Ec)
     
                 return E #units of Ec
             else:
@@ -268,8 +276,8 @@ class CBTmontecarlo:
 
         """
         if n.ndim==1:
-            Qr=np.array([n],dtype='float32').T.repeat(self.N,axis=1)+self.M
-            Ql=np.array([n],dtype='float32').T.repeat(self.N,axis=1)-self.M
+            Qr=np.array([n],dtype=self.dtype).T.repeat(self.N,axis=1)+self.M
+            Ql=np.array([n],dtype=self.dtype).T.repeat(self.N,axis=1)-self.M
             if reverse==False:
                 self.Q_new=np.concatenate((Qr,Ql),axis=1)
             else:
@@ -277,7 +285,7 @@ class CBTmontecarlo:
             return np.concatenate((Qr,Ql),axis=1)
         elif n.ndim==2:
             Qout=np.zeros((N-1,2*N,number_of_concurrent))
-            Q=np.array([n],dtype='float32').repeat(2*self.N,axis=-1).reshape(N-1,2*N*number_of_concurrent)+np.concatenate((self.M,-self.M),axis=1).repeat(number_of_concurrent,axis=1)
+            Q=np.array([n],dtype=self.dtype).repeat(2*self.N,axis=-1).reshape(N-1,2*N*number_of_concurrent)+np.concatenate((self.M,-self.M),axis=1).repeat(number_of_concurrent,axis=1)
             
             return Q
     def Q0(self,n,number_of_concurrent=1):
@@ -297,14 +305,14 @@ class CBTmontecarlo:
 
         """
         if n.ndim==1:
-            Qr=np.array([n],dtype='float32').T.repeat(self.N,axis=1)
+            Qr=np.array([n],dtype=self.dtype).T.repeat(self.N,axis=1)
             self.Q_old=np.concatenate((Qr,Qr),axis=1)
             return np.concatenate((Qr,Qr),axis=1)
         elif n.ndim==2:
-            Q=np.array([n],dtype='float32').repeat(2*self.N,axis=-1).reshape(N-1,2*N*number_of_concurrent)
+            Q=np.array([n],dtype=self.dtype).repeat(2*self.N,axis=-1).reshape(N-1,2*N*number_of_concurrent)
             return Q
 
-    def update_transition_rate(self,n2,n1,number_of_concurrent=1):
+    def update_transition_rate(self,n2,n1,number_of_concurrent=1,update_gammas=True):
         """
         
 
@@ -328,15 +336,16 @@ class CBTmontecarlo:
             
 
 
-            if dE.shape==(2*self.N,):
+            if dE.ndim==1:
                 Gamma=np.zeros_like(dE)
                 Gamma[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<np.log(limit2))]=dE[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<np.log(limit2))]*2*self.u))
                 Gamma[-dE*2*self.u<=np.log(limit1)]=dE[-dE*2*self.u<=np.log(limit1)]
                 Gamma[-dE*2*self.u>=np.log(limit2)]=-dE[-dE*2*self.u>=np.log(limit2)]*np.exp(dE[-dE*2*self.u>=np.log(limit2)]*2*self.u)
                 # print('updating transition rates')
                 # Gamma=Gamma
-                self.gammas=Gamma
-                return Gamma
+                if update_gammas:
+                    self.gammas=Gamma
+                return Gamma.astype(self.dtype)
             elif self.iterable(dE)==False:
                 
                 if (-dE*2*self.u>np.log(limit1)) and (-dE*2*self.u<np.log(limit2)):
@@ -354,8 +363,9 @@ class CBTmontecarlo:
             Gamma[-dE*2*self.u>=np.log(limit2)]=-dE[-dE*2*self.u>=np.log(limit2)]*np.exp(dE[-dE*2*self.u>=np.log(limit2)]*2*self.u)
             # print('updating transition rates')
             # Gamma=Gamma
-            self.gammas=Gamma
-            self.gammas2=Gamma.reshape(number_of_concurrent,2*self.N)
+            if update_gammas:
+                self.gammas=Gamma
+                self.gammas2=Gamma.reshape(number_of_concurrent,2*self.N)
             return Gamma
     
     def P(self,n,update=False,number_of_concurrent=1):
@@ -376,13 +386,16 @@ class CBTmontecarlo:
         if update==False:
             try:
                 p=self.gammas
-                return number_of_concurrent*p/sum(p)
+                self.p=number_of_concurrent*p/sum(p)
+                return self.p
             except Exception:
                 p=self.update_transition_rate(self.Q(n),self.Q0(n))
-                return number_of_concurrent*p/sum(p)
+                self.p=number_of_concurrent*p/sum(p)
+                return self.p
         else:
                 p=self.update_transition_rate(self.Q(n),self.Q0(n))
-                return number_of_concurrent*p/sum(p)
+                self.p=number_of_concurrent*p/sum(p)
+                return self.p
 
 
     def pick_event(self,n,k,number_of_concurrent=1):
@@ -441,6 +454,24 @@ class CBTmontecarlo:
                 return self.dts
                 self.dts=factor_SI/sum(self.gammas)
                 # return sum(self.dts)
+        
+    def dt_and_dQ_2_f(self,Qn,number_of_concurrent=1):
+        factor_SI=e_SI/(self.N*self.Ec*self.Gt)
+        # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
+        QQn=np.array([self.Q(n) for n in Qn.T])
+        QQn=eo.rearrange(QQn,'i j k -> j (i k)')
+        Q0Qn=np.array([self.Q0(n) for n in Qn.T])
+        Q0Qn=eo.rearrange(Q0Qn,'i j k -> j (i k)')
+        Gam=self.update_transition_rate(QQn,Q0Qn,update_gammas=False).reshape(2*self.N,2*self.N)
+        Gamsum=np.sum(Gam,axis=1)
+        dt2=factor_SI/Gamsum
+        dt2=np.sum(dt2*self.p)
+        
+        dQ2=-(e_SI/self.N)*np.sum(Gam[:,0:self.N]-Gam[:,self.N::],axis=1)/Gamsum
+        dQ2=np.sum(dQ2*self.p)
+        return dt2,dQ2
+    
+
     def dQ_f(self,n):
         
         try:
@@ -477,13 +508,18 @@ class CBTmontecarlo:
         self.potentials[1:-1]=v.flatten()
     def step(self,store_data=False):
         neff=self.neff_f(self.n)
-        self.update_transition_rate(self.Q(neff),self.Q0(neff))
-        if store_data:
-            self.dtp.append(self.dt_f(neff))
-            self.dQp.append(self.dQ_f(neff))
+        Qneff=self.Q(neff)
+        Q0neff=self.Q0(neff)
+        self.update_transition_rate(Qneff,Q0neff)
         self.index=self.pick_event(neff,1)
         Q_new=self.Q(self.n)
         n_new=Q_new[:,self.index[0]]
+        if store_data:
+            self.dtp.append(self.dt_f(neff))
+            self.dQp.append(self.dQ_f(neff))
+            dt,dQ=self.dt_and_dQ_2_f(Qneff)
+            self.dtp2.append(dt)
+            self.dQp2.append(dQ)
         self.n=n_new
         if store_data:
             self.store_n()
@@ -499,10 +535,15 @@ class CBTmontecarlo:
         return self.ns.T
     def multistep(self,store_data=False,number_of_concurrent=1):
         neff=self.neff_fnD(self.ns)
-        self.update_transition_rate(self.Q(neff),self.Q0(neff))
+        Qneff=self.Q(neff)
+        Q0neff=self.Q0(neff)
+        self.update_transition_rate(Qneff,Q0neff)
         if store_data:
+            dt,dQ=self.dt_and_dQ_2_f(Qneff)
             self.dtp.append(self.dt_f(neff))
             self.dQp.append(self.dQ_f(neff))
+            self.dtp2.append(dt)
+            self.dQp2.append(dQ)
             # self.Ip.append(np.sum(np.array(self.dQp))/np.sum(np.array(self.dtp)))
         self.indices=self.pick_event(neff,1,number_of_concurrent)
         Q_new=self.Q(self.ns)
@@ -529,7 +570,7 @@ class CBTmontecarlo:
                 else:
                     self.step(store_data=False)
             self.final_current=np.sum(np.array(self.dQp)[transient::])/np.sum(np.array(self.dtp)[transient::])
-            return self.final_current,np.array(self.dQp),np.array(self.dtp)
+            return self.final_current
         else:
             print('not implemented')
     # def initialize_many(self,n,k):
@@ -581,56 +622,39 @@ if __name__=='__main__':
     U=Us[2]
     # currentss=[]
     a=time()
+    CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64')
+    number_of_steps=50000
+    transient=2
+    current=CBT(number_of_steps,transient,print_every=1000)
+    
+    b=time()
+    print(b-a)
+    a=time()
     def f(U):
-        CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi)
-        number_of_steps=20000
-        transient=10
-        current,_,_=CBT(number_of_steps,transient,print_every=100)
-        return current
+        
+        CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64')
+        number_of_steps=50000
+        transient=2
+        print_every=1000
+        current=CBT(number_of_steps,transient,print_every=print_every)
+        dQ=np.array(CBT.dQp)[transient::]
+        dt=np.array(CBT.dtp)[transient::]
+        sigI=np.sqrt(np.var(dQ)/np.sum(np.array(dt))**2+(np.sum(dQ)/np.sum(dt))**2*np.var(dt)/np.sum(dt)**2)*np.sqrt(number_of_steps/print_every-transient)
+        
+        current2=np.sum(np.array(CBT.dQp2)[transient::])/np.sum(np.array(CBT.dtp2)[transient::])
+        dQ=np.array(CBT.dQp2)[transient::]
+        dt=np.array(CBT.dtp2)[transient::]
+        sigI2=np.sqrt(np.var(dQ)/np.sum(np.array(dt))**2+(np.sum(dQ)/np.sum(dt))**2*np.var(dt)/np.sum(dt)**2)*np.sqrt(number_of_steps/print_every-transient)
+        return current,current2,sigI,sigI2
+
     
-    # fig1,ax1=plt.subplots()
-    # for U in Us:
-    #     print(U)
-    #     CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi)
-    #     number_of_steps=10000
-    #     transient=0
-    #     currents=CBT(number_of_steps,transient,print_every=100)
-    #     # ax1.plot(currents)
-    #     # ax1.set_ylabel('current')
-    #     currentss.append(currents)
-    #     # second_order_C=Cs*1e-2
-    
-    # current=Parallel(n_jobs=8,verbose=50)(delayed(f)(U) for U in Us)
-    
-    
-    
-    
-    # currents=np.array(currentss)
-    # currentm=[]
-    # currentstd=[]
-    # for c in np.arange(len(currentss)):
-    #     currentm.append(np.mean(currentss[c]))
-    #     currentstd.append(np.std(currentss[c]))
-    # currentm=np.array(currentm)
-    # currentstd=np.array(currentstd)
-    
-    # currentmstack=np.array([currentm[0:points],currentm[points:2*points],currentm[2*points:3*points]])
-    # currentstdstack=np.array([currentstd[0:points],currentstd[points:2*points],currentstd[2*points:3*points]])
-    # gm=(currentm[2*points:3*points]-currentm[0:points])/(Us[2*points:3*points]-Us[0:points])
-    
-    # currentmstack=np.array([currentm[0:points],currentm[points:2*points]])
-    # currentstdstack=np.array([currentstd[0:points],currentstd[points:2*points]])
+    Is=Parallel(n_jobs=8,verbose=50)(delayed(f)(U) for U in Us)
+    current=np.array([I[0] for I in Is])
+
     
     gm1=(current[2*points:3*points]-current[0:points])/(Us[2*points:3*points]-Us[0:points])
     
-    
-    
-    # plt.figure()
-    # plt.plot(Us[points:2*points],gm1,'.')
-    
-    # plt.figure()
-    # plt.semilogy(Us[points:2*points]-dV,currentstd[points:2*points])
-    
+
     
     def CBT_model_g(x):
         return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
@@ -645,23 +669,7 @@ if __name__=='__main__':
     plt.plot(Us[points:2*points],gm1,'.')
     plt.plot(np.linspace(Us[0],Us[-1],1000),CBT_model_G(np.linspace(Us[0],Us[-1],1000)))
     
-    # plt.figure()
-    # plt.errorbar(Us,currentm,yerr=currentstd,fmt='.',label='data')
-    # plt.legend()
-    # plt.ylabel('current')
-    # plt.xlabel('bias voltage')
-    # plt.figure()
-    # # Us=np.linspace(-10e-3,10e-3,1000)
-    # G3 = dxdt(currentm[::20],Us[::20], kind="finite_difference", k=2)
-    # plt.errorbar(Us[0:-1],np.diff(currentm)/np.diff(Us),fmt='.',label='data')
-    # plt.errorbar(Us[::20],G3,fmt='.',label='data')
-    
-    # plt.legend()
-    # plt.ylabel('G')
-    # plt.xlabel('bias voltage')
-    b=time()
-    # processed_list = Parallel(n_jobs=8,verbose=50)(delayed(f)(j,self) for j in np.arange(int(len(self.z_SI))))
-    print(b-a)
+
     # for U in 
     # CBT.plot_event_histograms(CBT.n0)
     # plt.figure()
