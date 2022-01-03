@@ -23,7 +23,7 @@ e_SI=1.602*1e-19
 
 class CBTmontecarlo:
     
-    def __init__(self,N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64',number_of_concurrent=1):
+    def __init__(self,N,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64',number_of_concurrent=1):
         self.Ec=2*Ec #units of eV
         self.N=N
         self.n0=n0.astype(dtype) #units of number of electrons
@@ -31,7 +31,6 @@ class CBTmontecarlo:
         self.Cs=Cs.astype(dtype) #units of e/Ec=160 [fmF]/Ec[microeV]
         self.second_order_C=second_order_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
         self.U=U #units of eV
-        self.offset_q=offset_q.astype(dtype) #units of number of electrons
         self.offset_C=offset_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
         self.neff=self.neff_f(self.n0)
         self.kBT=kB*T #units of eV
@@ -163,7 +162,7 @@ class CBTmontecarlo:
         if n.shape==(self.N-1,):
             v=self.Cinv@np.array([n]).T
             boundaries=(self.Cs[0]*v[0]+self.second_order_C[1]*v[1]-self.Cs[-1]*v[-1]-self.second_order_C[-1]*v[-2])*self.U/(self.Ec) #units of Ec
-            E=np.sum(n*(v.flatten()/2+self.offset_q))+boundaries[0]
+            E=np.sum(n*(v.flatten()/2))+boundaries[0]
             return E #units of Ec
         elif n.ndim==2:
             
@@ -669,7 +668,7 @@ if __name__=='__main__':
     Gt=2e-5
     gi=np.ones((2*N,))
 
-    T=0.2
+    T=0.075
     FWHM=5.439*kB*T*N
     
     points=20
@@ -735,7 +734,7 @@ if __name__=='__main__':
     print_every=200
     def f(U):
         
-        CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64',number_of_concurrent=200)
+        CBT=CBTmontecarlo(N,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64',number_of_concurrent=200)
 
         current=CBT(number_of_steps,transient,print_every=print_every,number_of_concurrent=50)
         dQ=np.array(CBT.dQp)[transient::,:]
@@ -745,7 +744,11 @@ if __name__=='__main__':
 
         return current,sigI,dQ,dt
     
+<<<<<<< Updated upstream
     Is=Parallel(n_jobs=4,verbose=50)(delayed(f)(U) for U in Us)
+=======
+    Is=Parallel(n_jobs=8,verbose=50)(delayed(f)(U) for U in Us)
+>>>>>>> Stashed changes
     currents=np.array([I[0] for I in Is])
     dcurrents=np.array([I[1] for I in Is])
     plt.figure()
@@ -753,7 +756,7 @@ if __name__=='__main__':
         plt.errorbar(Us,currents[:,j],yerr=dcurrents[:,j]/np.sqrt(len(dcurrents[0,:])),fmt='.',color=[0,0,j/len(dcurrents[0,:])])
     currentsm=np.mean(currents,axis=1)
     
-    gm1=(currentsm[2*points:3*points]-currentsm[0:points])/(Us[2*points:3*points]-Us[0:points])
+    gm1=(currentsm[points:2*points]-currentsm[0:points])/(Us[points:2*points]-Us[0:points])
     
     b=time()
     print(b-a)
@@ -768,7 +771,7 @@ if __name__=='__main__':
         return Gt*(1-Ec*CBT_model_g(V/(N*kB*T))/(kB*T))
 
     plt.figure()
-    plt.errorbar(Us[points:2*points],gm1,fmt='.')
+    plt.errorbar(Us[points:2*points],gm1+2*Gt,fmt='.')
     plt.plot(np.linspace(Us[0],Us[-1],1000),CBT_model_G(np.linspace(Us[0],Us[-1],1000)))
     
 
