@@ -310,8 +310,8 @@ class CBTmontecarlo:
             DESCRIPTION.
 
         """
-        limit1=1e-8
-        limit2=1e8
+        limit1=1e-9
+        limit2=1e9
         dE=-(self.energy(n2)-self.energy(n1,boundary_work=False)) #units of Ec
          
         if dE.ndim==1:
@@ -465,7 +465,7 @@ class CBTmontecarlo:
         if onlyQ is False:
             # self.Q0Qn_new=np.array([self.Q0(n) for n in nn.T])
             # self.Q0Qn_new=eo.rearrange(self.Q0Qn_new,'i j k -> j (i k)')
-            Q0Qn_new=copy(QQn_new)
+            Q0Qn_new=np.array(QQn_new)
             
         QQn_new+=self.MMM
         if update:
@@ -745,7 +745,7 @@ if __name__=='__main__':
 
         return current,sigI,dQ,dt
     
-    Is=Parallel(n_jobs=4,verbose=50)(delayed(f)(U) for U in Us)
+    Is=Parallel(n_jobs=8,verbose=50)(delayed(f)(U) for U in Us)
     # current=np.array([I[0] for I in Is])
     # # dcurrent=np.array([I[1] for I in Is])
     
