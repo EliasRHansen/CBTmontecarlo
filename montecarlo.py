@@ -772,11 +772,12 @@ class conductance:
         self.store_interval=store_interval
         self.transient=transient
         self.Us=Us
-        self.now=str(datetime.now())
+        self.now=str(datetime.now()).replace(':','.')
         a=time()
         Is=Parallel(n_jobs=n_jobs,verbose=50)(delayed(self.f)(U) for U in Us)
         b=time()
         self.simulation_time=b-a
+        self.Is=Is
         self.currents=np.array([I[0] for I in Is])
         self.dQ=np.array([I[1] for I in Is])
         self.dt=np.array([I[2] for I in Is])
@@ -800,12 +801,12 @@ class conductance:
         return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
 
     def CBT_model_G(self,V):
-        return self.Gt*(1-self.Ec*self.CBT_model_g(V/(self.N*self.kB*self.T))/(self.kB*self.T))
+        return self.Gt*(1-self.Ec*self.CBT_model_g(V/(self.N*kB*self.T))/(kB*self.T))
     def plotG(self,save=False):
 
         points=self.points
         fig,ax=plt.subplots()
-        plt.title('MC for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, Gt={:.1e} $\mu$Si, q0={:.1e}e, sample interval={}, steps/run={}, runs={}'.format(self.N,self.T*1e3,self.Ec*1e6,self.Gt*1e6,self.q0,
+        plt.title('MC for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e, sample interval={}, \n steps/run={}, runs={}'.format(self.N,self.T*1e3,self.Ec*1e6,self.Gt*1e6,self.q0,
                                                                                                                                                             self.store_interval,self.number_of_steps,self.number_of_concurrent))
         
         Us=self.Us
@@ -820,7 +821,7 @@ class conductance:
         plt.tight_layout()
         fig2,ax2=plt.subplots()
 
-        plt.title('Results for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, Gt={:.1e} $\mu$Si, q0={:.1e}e'.format(self.N,self.T*1e3,self.Ec*1e6,self.Gt*1e6,self.q0))
+        plt.title('Results for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e'.format(self.N,self.T*1e3,self.Ec*1e6,self.Gt*1e6,self.q0))
         ax2.errorbar(Vs,self.Gsm,yerr=self.Gstd,fmt='.',label='Monte Carlo simulation results')
         ax2.plot(np.linspace(Us[0],Us[-1],1000),self.CBT_model_G(np.linspace(Us[0],Us[-1],1000)),label='first order analytic result')
         ax2.set_xlabel('bias voltage [V]')
@@ -832,14 +833,14 @@ class conductance:
         
             filepath=os.getcwd()
             try:
-                fig.savefig(filepath+'\\{}, sim time={}\\'.format(self.now,self.simulation_time)+'Conductance1.png')
-                fig2.savefig(filepath+'\\{}, sim time={}\\'.format(self.now,self.simulation_time)+'Conductance2.png')
+                fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance1.png')
+                fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance2.png')
                 print('saving figures in folder: '+filepath)
             except Exception:
                 print('saving figures in folder: '+filepath)
-                os.mkdir(filepath+'\\{}, sim time={}\\'.format(self.now,self.simulation_time))
-                fig.savefig(filepath+'\\{}, sim time={}\\'.format(self.now,self.simulation_time)+'Conductance1.png')
-                fig2.savefig(filepath+'\\{}, sim time={}\\'.format(self.now,self.simulation_time)+'Conductance2.png')
+                os.mkdir(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time))
+                fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance1.png')
+                fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance2.png')
         
     def __call__(self,V,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,n_jobs=4,dV=None,split=True,plot=True):
         self.Vhalf=5.439*kB*self.T*self.N
@@ -855,7 +856,7 @@ class conductance:
         self.run(Us,number_of_steps,store_interval,transient,T,number_of_concurrent,n_jobs)
         if plot:
             self.plotG(save=True)
-        return self.Gsm,self.Gstd,self.Gs,Is
+        return self.Gsm,self.Gstd,self.Gs,self.Is
                 
             
         
@@ -890,21 +891,20 @@ if __name__=='__main__':
     points=20
     lim=3.5*FWHM
     dV=FWHM/50
-    # Us=np.linspace(-lim,lim,points)
-    # Us=np.concatenate((Us,np.linspace(-lim,lim,points)+5e-6))
-    # Us=np.concatenate((Us,np.linspace(-lim,lim,points)-5e-6))
     Vs=np.linspace(-lim,lim,points)
 
-
-    a=time()
-    number_of_steps=15000
+    number_of_steps=12000
     transient=2
-    print_every=100
-    number_of_concurrent=10
+    print_every=1000
+    number_of_concurrent=15
     
     
     gg=conductance(N,T,Ec,Gt,n0=n0)
-    Gsm,Gstd,Gs,Is=gg(Vs,number_of_steps=number_of_steps,transient=transient,store_interval=print_every,number_of_concurrent=number_of_concurrent,n_jobs=4)
+    Gsm,Gstd,Gs,Is=gg(Vs,number_of_steps=number_of_steps,
+                      transient=transient,
+                      store_interval=print_every,
+                      number_of_concurrent=number_of_concurrent,
+                      n_jobs=4)
     
     # def plotG():
     #     plt.figure()
