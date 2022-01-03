@@ -72,6 +72,10 @@ class CBTmontecarlo:
         self.MM=np.concatenate((self.M,-self.M),axis=1)
         self.number_of_concurrent=number_of_concurrent
         self.MMM=np.tile(self.MM,(1,self.number_of_concurrent))
+        self.A=self.MMM.T@self.Cinv
+        self.B=self.Cinv@self.MMM
+        C=np.einsum('ij,ij->j',self.MMM,self.B)/2
+        self.dE0=C+self.U/(self.Ec)*(Cs[0]*self.B[0,:]-Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:])
     def neff_f(self,n):
         """
         
@@ -163,7 +167,8 @@ class CBTmontecarlo:
             return E #units of Ec
         elif n.ndim==2:
             
-            v=self.Cinv@n 
+            v=self.Cinv@n
+            
             # v=np.einsum('ij,jl->il',A,n)
             w=np.einsum('ij,ij->j',n,v)     
             # ww=n.T@np.array([self.offset_q]).T
@@ -180,7 +185,15 @@ class CBTmontecarlo:
         else:
             raise Exception('energy could not be calculated due to incorrect shape of charge array')
 
-
+    def dE_f(self,nn):
+        # v=self.A@nn   
+        v=np.einsum('ij,ij->j',nn,self.B)
+        E=v+self.dE0#+ww.flatten() #units of Ec
+        E[::2*self.N]=E[::2*self.N]+self.U/(2*self.Ec)
+        E[self.N-1::2*self.N]=E[self.N-1::2*self.N]+self.U/(2*self.Ec)
+        E[self.N::2*self.N]=E[self.N::2*self.N]-self.U/(2*self.Ec)
+        E[2*self.N-1::2*self.N]=E[2*self.N-1::2*self.N]-self.U/(2*self.Ec)
+        return E
     # def energy(self,n):
     #     """
         
@@ -312,8 +325,16 @@ class CBTmontecarlo:
         """
         limit1=1e-9
         limit2=1e9
+        a=time()
         dE=-(self.energy(n2)-self.energy(n1,boundary_work=False)) #units of Ec
-         
+        print(dE)
+        b=time()
+        print(b-a)
+        a=time()
+        dE=self.dE_f(n1)
+        print(dE)
+        b=time()
+        print(b-a)
         if dE.ndim==1:
             Gamma=np.zeros_like(dE)
             try:
@@ -672,18 +693,18 @@ if __name__=='__main__':
     T=0.075
     FWHM=5.439*kB*T*N
     
-    points=21
+    points=20
     lim=3.5*FWHM
     dV=FWHM/50
     # Us=np.linspace(-lim,lim,points)
     # Us=np.concatenate((Us,np.linspace(-lim,lim,points)+5e-6))
     # Us=np.concatenate((Us,np.linspace(-lim,lim,points)-5e-6))
     Us=np.linspace(-lim,lim,points)-dV
-    Us=np.concatenate((Us,np.linspace(-lim,lim,points)))
+    # Us=np.concatenate((Us,np.linspace(-lim,lim,points)))
     Us=np.concatenate((Us,np.linspace(-lim,lim,points)+dV))
     U=Us[2]
 
-    # a=time()
+    a=time()
     # CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64')
     # number_of_steps=10000
     # transient=2
@@ -730,14 +751,14 @@ if __name__=='__main__':
     #     dt=np.array(CBT.dtp2)[transient::]
     #     sigI2=np.sqrt(np.var(dQ)/np.sum(np.array(dt))**2+(np.sum(dQ)/np.sum(dt))**2*np.var(dt)/np.sum(dt)**2)*np.sqrt(number_of_steps/print_every-transient)
     #     return current,current2,sigI,sigI2
-    number_of_steps=5000
+    number_of_steps=4000
     transient=5
-    print_every=100
+    print_every=200
     def f(U):
         
         CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64')
 
-        current=CBT(number_of_steps,transient,print_every=print_every,number_of_concurrent=1000)
+        current=CBT(number_of_steps,transient,print_every=print_every,number_of_concurrent=100)
         dQ=np.array(CBT.dQp)[transient::,:]
         dt=np.array(CBT.dtp)[transient::,:]
         sigI=np.sqrt(np.var(dQ,axis=0)/np.sum(dt,axis=0)**2+(np.sum(dQ,axis=0)/np.sum(dt,axis=0))**2*np.var(dt,axis=0)/np.sum(dt,axis=0)**2)*np.sqrt(number_of_steps/print_every-transient)
@@ -745,14 +766,14 @@ if __name__=='__main__':
 
         return current,sigI,dQ,dt
     
-    Is=Parallel(n_jobs=8,verbose=50)(delayed(f)(U) for U in Us)
+    Is=Parallel(n_jobs=2,verbose=50)(delayed(f)(U) for U in Us)
     # current=np.array([I[0] for I in Is])
     # # dcurrent=np.array([I[1] for I in Is])
     
     # # gm1=(current[2*points:3*points]-current[0:points])/(Us[2*points:3*points]-Us[0:points])
     
-    # b=time()
-    # print(b-a)
+    b=time()
+    print(b-a)
     
     # def CBT_model_g(x):
     #     return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
