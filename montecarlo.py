@@ -316,7 +316,7 @@ class CBTmontecarlo:
         # b=time()
         # print(b-a)
         # a=time()
-        dE=self.dE_f(n1)
+        dE=-self.dE_f(n1)
 
         if dE.ndim==1:
             Gamma=np.zeros_like(dE)
@@ -730,14 +730,14 @@ if __name__=='__main__':
     #     dt=np.array(CBT.dtp2)[transient::]
     #     sigI2=np.sqrt(np.var(dQ)/np.sum(np.array(dt))**2+(np.sum(dQ)/np.sum(dt))**2*np.var(dt)/np.sum(dt)**2)*np.sqrt(number_of_steps/print_every-transient)
     #     return current,current2,sigI,sigI2
-    number_of_steps=4000
+    number_of_steps=10000
     transient=5
     print_every=200
     def f(U):
         
         CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64',number_of_concurrent=200)
 
-        current=CBT(number_of_steps,transient,print_every=print_every,number_of_concurrent=200)
+        current=CBT(number_of_steps,transient,print_every=print_every,number_of_concurrent=50)
         dQ=np.array(CBT.dQp)[transient::,:]
         dt=np.array(CBT.dtp)[transient::,:]
         sigI=np.sqrt(np.var(dQ,axis=0)/np.sum(dt,axis=0)**2+(np.sum(dQ,axis=0)/np.sum(dt,axis=0))**2*np.var(dt,axis=0)/np.sum(dt,axis=0)**2)*np.sqrt(number_of_steps/print_every-transient)
@@ -745,7 +745,7 @@ if __name__=='__main__':
 
         return current,sigI,dQ,dt
     
-    Is=Parallel(n_jobs=6,verbose=50)(delayed(f)(U) for U in Us)
+    Is=Parallel(n_jobs=4,verbose=50)(delayed(f)(U) for U in Us)
     currents=np.array([I[0] for I in Is])
     dcurrents=np.array([I[1] for I in Is])
     plt.figure()
