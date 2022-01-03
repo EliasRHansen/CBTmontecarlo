@@ -72,6 +72,10 @@ class CBTmontecarlo:
         self.MM=np.concatenate((self.M,-self.M),axis=1)
         self.number_of_concurrent=number_of_concurrent
         self.MMM=np.tile(self.MM,(1,self.number_of_concurrent))
+        self.A=self.MMM.T@self.Cinv
+        self.B=self.Cinv@self.MMM
+        C=np.einsum('ij,ij->j',self.MMM,self.B)/2
+        self.dE0=C+self.U/(self.Ec)*(Cs[0]*self.B[0,:]-Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:])
     def neff_f(self,n):
         """
         
@@ -163,7 +167,8 @@ class CBTmontecarlo:
             return E #units of Ec
         elif n.ndim==2:
             
-            v=self.Cinv@n 
+            v=self.Cinv@n
+            
             # v=np.einsum('ij,jl->il',A,n)
             w=np.einsum('ij,ij->j',n,v)     
             # ww=n.T@np.array([self.offset_q]).T
@@ -180,7 +185,15 @@ class CBTmontecarlo:
         else:
             raise Exception('energy could not be calculated due to incorrect shape of charge array')
 
-
+    def dE_f(self,nn):
+        # v=self.A@nn   
+        v=np.einsum('ij,ij->j',nn,self.B)
+        E=v+self.dE0#+ww.flatten() #units of Ec
+        E[::2*self.N]=E[::2*self.N]+self.U/(2*self.Ec)
+        E[self.N-1::2*self.N]=E[self.N-1::2*self.N]+self.U/(2*self.Ec)
+        E[self.N::2*self.N]=E[self.N::2*self.N]-self.U/(2*self.Ec)
+        E[2*self.N-1::2*self.N]=E[2*self.N-1::2*self.N]-self.U/(2*self.Ec)
+        return E
     # def energy(self,n):
     #     """
         
@@ -293,27 +306,18 @@ class CBTmontecarlo:
             Q=np.array([n],dtype=self.dtype).repeat(2*self.N,axis=-1).reshape(N-1,2*N*self.number_of_concurrent)
             return Q
 
-    def update_transition_rate(self,n2,n1,update_gammas=True):
-        """
-        
+    def update_transition_rate(self,n1,update_gammas=True):
 
-        Parameters
-        ----------
-        n2 : charge array or matrix of charge arrays as columns
-            DESCRIPTION.
-        n1 : charge array or matrix of charge arrays as columns
-            DESCRIPTION.
-
-        Returns
-        -------
-        Gamma : array of transition rates calculated from the energy differences between charge configuration n2 and n1
-            DESCRIPTION.
-
-        """
         limit1=1e-9
         limit2=1e9
-        dE=-(self.energy(n2)-self.energy(n1,boundary_work=False)) #units of Ec
-         
+        # a=time()
+        # dE=-(self.energy(n2)-self.energy(n1,boundary_work=False)) #units of Ec
+        # print(dE)
+        # b=time()
+        # print(b-a)
+        # a=time()
+        dE=self.dE_f(n1)
+
         if dE.ndim==1:
             Gamma=np.zeros_like(dE)
             try:
@@ -456,6 +460,14 @@ class CBTmontecarlo:
         else:
                 self.dQ=-(e_SI/self.N)*self.Gamdif/self.Gamsum
                 return self.dQ
+    def Q0Q_nD(self,nn,update=True):
+
+        QQn_new=nn[...,None].repeat(2*self.N,axis=2)
+
+        QQn_new=eo.rearrange(QQn_new,'i j k -> i (j k)')
+        if update:
+            self.Q0Qn=QQn_new
+        return QQn_new
     def QQ_nD(self,nn,update=True,onlyQ=False):
 
         QQn_new=nn[...,None].repeat(2*self.N,axis=2)
@@ -518,12 +530,12 @@ class CBTmontecarlo:
         self.potentials[1:-1]=v.flatten()
     def step(self,store_data=False):
         neff=self.n#self.neff_f(self.n)
-        Qneff=self.Q(neff)
+        # Qneff=self.Q(neff)
         Q0neff=self.Q0(neff)
-        self.update_transition_rate(Qneff,Q0neff)
+        self.update_transition_rate(Q0neff)
         self.P(neff)
         self.index=self.pick_event(neff,1)
-        Q_new=Qneff#self.Q(self.n)
+        Q_new=Q0neff+self.MM#self.Q(self.n)
         n_new=Q_new[:,self.index[0]]
         if store_data:
             self.dtp.append(self.dt_f(neff))
@@ -548,8 +560,9 @@ class CBTmontecarlo:
         # with np.errstate(divide='raise'):
             try:
                 neff=self.ns#self.neff_fnD(self.ns)
-                self.QQ_nD(neff)
-                self.gammas2=self.update_transition_rate(self.QQn,self.Q0Qn).reshape(self.number_of_concurrent,2*self.N)
+                # self.QQ_nD(neff)
+                self.Q0Q_nD(neff)
+                self.gammas2=self.update_transition_rate(self.Q0Qn).reshape(self.number_of_concurrent,2*self.N)
                 self.Gamsum=np.sum(self.gammas2,axis=1)
                 self.Gamdif=np.sum(self.gammas2[:,0:self.N]-self.gammas2[:,self.N::],axis=1)
                 self.P(neff)
@@ -560,14 +573,14 @@ class CBTmontecarlo:
         
                     # self.Ip.append(np.sum(np.array(self.dQp))/np.sum(np.array(self.dtp)))
                 self.indices=self.pick_event(neff,1)
-                Q_new=self.QQn#self.QQ_nD(self.ns,onlyQ=True)
+                Q_new=self.Q0Qn+self.MMM#self.QQ_nD(self.ns,onlyQ=True)
                 n_new=Q_new[:,self.indices][:,:,0]
                 self.ns=n_new
             except FloatingPointError:
                 print('FloatingPointError Occurred; trying to redo step. This may occur when the sum of the transition rates is very small. In this case, the sums are: '+str(self.Gamsum)+". However, I think the bug causing this is gone now.")
                 print(np.sum(self.p,axis=1))
                 self.indices=self.pick_event(neff,1)
-                Q_new=self.QQn#self.QQ_nD(self.ns,onlyQ=True)
+                Q_new=self.Q0Qn+self.MMM#self.QQ_nD(self.ns,onlyQ=True)
                 n_new=Q_new[:,self.indices][:,:,0]
                 self.ns=n_new
                 self.multistep()
@@ -618,6 +631,10 @@ class CBTmontecarlo:
         else:
             self.number_of_concurrent=number_of_concurrent
             self.MMM=np.tile(self.MM,(1,self.number_of_concurrent))
+            self.A=self.MMM.T@self.Cinv
+            self.B=self.Cinv@self.MMM
+            C=np.einsum('ij,ij->j',self.MMM,self.B)/2
+            self.dE0=C+self.U/(self.Ec)*(Cs[0]*self.B[0,:]-Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:])
             self.initiate_multistep(randomize_initial=False)
             if print_every is None:
                 print_every=int(number_of_steps/100+1)
@@ -635,24 +652,7 @@ class CBTmontecarlo:
             self.final_currents=np.sum(np.array(self.dQp)[transient::,:],axis=0)/np.sum(np.array(self.dtp)[transient::,:],axis=0)
             return self.final_currents
 
-    # def initialize_many(self,n,k):
-    #     self.ns=np.array([n]*k)
-    #     self.dtps=[[]]*k
-    #     self.dQs=[[]]*k
-        
-    # def step_many(self,k):
-        
-    #     neffnD=self.neff_fnD(self.ns)
-    #     Q_new=[]
-    #     for j in np.arange(k):
-    #         self.update_transition_rate(self.Q(neffnD[j]),self.Q0(neffnD[j]))
-    #         self.dtps[j].append(self.dt_f(neffnD[j]))
-    #         self.dQps[j].append(self.dQ_f(neffnD[j]))
-    #         Q_new.append(self.Q(self.ns[j]))
-    #     self.index=self.pick_event(neff,k)
 
-    #     n_new=Q_new[:,self.index[0]]
-    #     self.n=n_new
 #%%
 if __name__=='__main__':
     
@@ -669,21 +669,21 @@ if __name__=='__main__':
     Gt=2e-5
     gi=np.ones((2*N,))
 
-    T=0.075
+    T=0.2
     FWHM=5.439*kB*T*N
     
-    points=21
+    points=20
     lim=3.5*FWHM
     dV=FWHM/50
     # Us=np.linspace(-lim,lim,points)
     # Us=np.concatenate((Us,np.linspace(-lim,lim,points)+5e-6))
     # Us=np.concatenate((Us,np.linspace(-lim,lim,points)-5e-6))
     Us=np.linspace(-lim,lim,points)-dV
-    Us=np.concatenate((Us,np.linspace(-lim,lim,points)))
+    # Us=np.concatenate((Us,np.linspace(-lim,lim,points)))
     Us=np.concatenate((Us,np.linspace(-lim,lim,points)+dV))
     U=Us[2]
 
-    # a=time()
+    a=time()
     # CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64')
     # number_of_steps=10000
     # transient=2
@@ -730,14 +730,14 @@ if __name__=='__main__':
     #     dt=np.array(CBT.dtp2)[transient::]
     #     sigI2=np.sqrt(np.var(dQ)/np.sum(np.array(dt))**2+(np.sum(dQ)/np.sum(dt))**2*np.var(dt)/np.sum(dt)**2)*np.sqrt(number_of_steps/print_every-transient)
     #     return current,current2,sigI,sigI2
-    number_of_steps=5000
+    number_of_steps=4000
     transient=5
-    print_every=100
+    print_every=200
     def f(U):
         
-        CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64')
+        CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64',number_of_concurrent=200)
 
-        current=CBT(number_of_steps,transient,print_every=print_every,number_of_concurrent=1000)
+        current=CBT(number_of_steps,transient,print_every=print_every,number_of_concurrent=200)
         dQ=np.array(CBT.dQp)[transient::,:]
         dt=np.array(CBT.dtp)[transient::,:]
         sigI=np.sqrt(np.var(dQ,axis=0)/np.sum(dt,axis=0)**2+(np.sum(dQ,axis=0)/np.sum(dt,axis=0))**2*np.var(dt,axis=0)/np.sum(dt,axis=0)**2)*np.sqrt(number_of_steps/print_every-transient)
@@ -745,27 +745,31 @@ if __name__=='__main__':
 
         return current,sigI,dQ,dt
     
-    Is=Parallel(n_jobs=8,verbose=50)(delayed(f)(U) for U in Us)
-    # current=np.array([I[0] for I in Is])
-    # # dcurrent=np.array([I[1] for I in Is])
+    Is=Parallel(n_jobs=6,verbose=50)(delayed(f)(U) for U in Us)
+    currents=np.array([I[0] for I in Is])
+    dcurrents=np.array([I[1] for I in Is])
+    plt.figure()
+    for j in np.arange(len(currents[0,:])):
+        plt.errorbar(Us,currents[:,j],yerr=dcurrents[:,j]/np.sqrt(len(dcurrents[0,:])),fmt='.',color=[0,0,j/len(dcurrents[0,:])])
+    currentsm=np.mean(currents,axis=1)
     
-    # # gm1=(current[2*points:3*points]-current[0:points])/(Us[2*points:3*points]-Us[0:points])
+    gm1=(currentsm[2*points:3*points]-currentsm[0:points])/(Us[2*points:3*points]-Us[0:points])
     
-    # b=time()
-    # print(b-a)
+    b=time()
+    print(b-a)
     
-    # def CBT_model_g(x):
-    #     return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
+    def CBT_model_g(x):
+        return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
 
 
 
-    # def CBT_model_G(V):
+    def CBT_model_G(V):
         
-    #     return Gt*(1-Ec*CBT_model_g(V/(N*kB*T))/(kB*T))
-    # yerr=np.sqrt(dcurrent[2*points:3*points]**2+dcurrent[0:points]**2)/(Us[2*points:3*points]-Us[0:points])
-    # plt.figure()
-    # plt.errorbar(Us[points:2*points],gm1,yerr=yerr,fmt='.')
-    # plt.plot(np.linspace(Us[0],Us[-1],1000),CBT_model_G(np.linspace(Us[0],Us[-1],1000)))
+        return Gt*(1-Ec*CBT_model_g(V/(N*kB*T))/(kB*T))
+
+    plt.figure()
+    plt.errorbar(Us[points:2*points],gm1,fmt='.')
+    plt.plot(np.linspace(Us[0],Us[-1],1000),CBT_model_G(np.linspace(Us[0],Us[-1],1000)))
     
 
     # for U in 
