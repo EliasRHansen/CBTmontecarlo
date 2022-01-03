@@ -23,24 +23,51 @@ e_SI=1.602*1e-19
 
 class CBTmontecarlo:
     
-    def __init__(self,N,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64',number_of_concurrent=1):
-        self.Ec=2*Ec #units of eV
+    def __init__(self,N,T,Ec,Gt,offset_C=None,second_order_C=None,n0=None,gi=None,U=0,dtype='float64',number_of_concurrent=1,dC=None):
+        if dC is None:
+            dC=0
+            self.dC=dC
+        else:
+            self.dC=dC
+        if gi is None:
+            gi=1
+            self.gi=gi
+        else:
+            self.gi=gi
+        if n0 is None:
+            n0=np.array([0]*(N-1))
+        # elif n0=='random':
+        #     n0=np.array(random.choices(np.arange(11)-5,k=N-1,weights=np.exp(-0.2*(np.arange(11)-5)**2)))
+        else:
+            self.n0=n0
+        if second_order_C is None:
+            second_order_C=np.zeros((N,),dtype=dtype)
+            self.second_order_C=second_order_C#units of e/Ec=160[fmF]/Ec[microeV]
+        else:
+            self.second_order_C=second_order_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
+        if offset_C is None:
+            offset_C=np.zeros((N-1,),dtype=dtype)
+            self.offset_C=offset_C
+        else:
+            self.offset_C=offset_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
+            
+        self.Ec=Ec #units of eV
         self.N=N
         self.n0=n0.astype(dtype) #units of number of electrons
         self.n=n0.astype(dtype)
-        self.Cs=Cs.astype(dtype) #units of e/Ec=160 [fmF]/Ec[microeV]
-        self.second_order_C=second_order_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
+        self.Cs=np.ones((N,),dtype=dtype)+dC #units of e/Ec=160 [fmF]/Ec[microeV]
+        
         self.U=U #units of eV
-        self.offset_C=offset_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
-        self.neff=self.neff_f(self.n0)
+        
+        # self.neff=self.neff_f(self.n0)
         self.kBT=kB*T #units of eV
-        self.u=self.Ec/(2*self.kBT)
+        self.u=self.Ec/(self.kBT)
         self.Gt=Gt
         self.dtype=dtype
-        normalization=sum(1/gi)
-        self.gi=gi.astype(dtype)*normalization
-        self.pi=np.ones((self.N,))/N
-        self.Ip=[]
+
+        self.gi=gi
+
+
         
         d1=np.concatenate((self.Cs,np.zeros((1,))))
         dm1=np.concatenate((self.Cs,np.zeros((1,))))
@@ -59,9 +86,11 @@ class CBTmontecarlo:
         self.C=sparse.dia_matrix((data,offsets),shape=(N-1,N-1),dtype=dtype)
         self.Cinv=inv(sparse.csc_matrix(self.C)).toarray()
         potentials=self.Cinv@np.array([self.n],dtype=dtype).T
+        print(potentials)
+        print(potentials.shape)
         # potentials=np.array(potentials,dtype='float64')
         potentials=list(potentials.flatten())
-        
+        print(self.U/(2*self.Ec))
         potentials.append(self.U/(2*self.Ec))
         potentials.append(-self.U/(2*self.Ec))
         self.potentials=np.roll(np.array(potentials,dtype=dtype),1)
@@ -74,7 +103,8 @@ class CBTmontecarlo:
         self.A=self.MMM.T@self.Cinv
         self.B=self.Cinv@self.MMM
         C=np.einsum('ij,ij->j',self.MMM,self.B)/2
-        self.dE0=C+self.U/(self.Ec)*(Cs[0]*self.B[0,:]-Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:])
+        self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B[0,:]-self.Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:])
+    
     def neff_f(self,n):
         """
         
@@ -92,6 +122,7 @@ class CBTmontecarlo:
         """
         self.neff=copy(n)
         self.neff[0]=self.neff[0]-self.Cs[0]*self.U/2
+        print(self.second_order_C)
         self.neff[1]=self.neff[1]-self.second_order_C[1]*self.U/2
         self.neff[-1]=self.neff[-1]+self.Cs[-1]*self.U/2
         self.neff[-2]=self.neff[-2]+self.second_order_C[-1]*self.U/2
@@ -320,17 +351,17 @@ class CBTmontecarlo:
         if dE.ndim==1:
             Gamma=np.zeros_like(dE)
             try:
-                Gamma[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<np.log(limit2))]=dE[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<np.log(limit2))]*2*self.u))
+                Gamma[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]=dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]*self.u))
             except FloatingPointError:
-                print('a floating point error occurred for dE[..]='+str(dE[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<np.log(limit2))]))
-                Gamma[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<0)]=dE[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<0)]/(1-np.exp(-dE[(-dE*2*self.u>np.log(limit1)) & (-dE*2*self.u<0)]*2*self.u))
-                Gamma[(-dE*2*self.u>0) & (-dE*2*self.u<np.log(limit2))]=dE[(-dE*2*self.u>0) & (-dE*2*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*2*self.u>0) & (-dE*2*self.u<np.log(limit2))]*2*self.u))
-                Gamma[dE*2*self.u==0.]=1/(2*self.u)
-            Gamma[-dE*2*self.u<=np.log(limit1)]=dE[-dE*2*self.u<=np.log(limit1)]
+                print('a floating point error occurred for dE[..]='+str(dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]))
+                Gamma[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]=dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]/(1-np.exp(-dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]*self.u))
+                Gamma[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]=dE[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]*self.u))
+                Gamma[dE*self.u==0.]=1/(self.u)
+            Gamma[-dE*self.u<=np.log(limit1)]=dE[-dE*self.u<=np.log(limit1)]
             try:
-                Gamma[-dE*2*self.u>=np.log(limit2)]=-dE[-dE*2*self.u>=np.log(limit2)]*np.exp(dE[-dE*2*self.u>=np.log(limit2)]*2*self.u)
+                Gamma[-dE*self.u>=np.log(limit2)]=-dE[-dE*self.u>=np.log(limit2)]*np.exp(dE[-dE*self.u>=np.log(limit2)]*self.u)
             except FloatingPointError:
-                Gamma[-dE*2*self.u>=np.log(limit2)]=0
+                Gamma[-dE*self.u>=np.log(limit2)]=0
             # print('updating transition rates')
             # Gamma=Gamma
             if update_gammas:
@@ -339,12 +370,12 @@ class CBTmontecarlo:
         
         elif self.iterable(dE)==False:
             
-            if (-dE*2*self.u>np.log(limit1)) and (-dE*2*self.u<np.log(limit2)):
-                Gamma=dE/(1-np.exp(-dE*2*self.u))
-            elif (-dE*2*self.u<=np.log(limit1)):
+            if (-dE*self.u>np.log(limit1)) and (-dE*self.u<np.log(limit2)):
+                Gamma=dE/(1-np.exp(-dE*self.u))
+            elif (-dE*self.u<=np.log(limit1)):
                 Gamma=dE
-            elif (-dE*2*self.u>=np.log(limit2)):
-                Gamma=-dE*np.exp(dE*2*self.u)
+            elif (-dE*self.u>=np.log(limit2)):
+                Gamma=-dE*np.exp(dE*self.u)
             # Gamma=Gamma
             return Gamma
 
@@ -584,7 +615,7 @@ class CBTmontecarlo:
                 self.ns=n_new
                 self.multistep()
 
-        
+
 
 
     
@@ -609,7 +640,7 @@ class CBTmontecarlo:
             print('attribute p does not exist')
         self.dtp=[]
         self.dQp=[]
-
+        self.AutocorI=[]
         if number_of_concurrent==1:
             self.number_of_concurrent=number_of_concurrent
             if print_every is None:
@@ -633,7 +664,7 @@ class CBTmontecarlo:
             self.A=self.MMM.T@self.Cinv
             self.B=self.Cinv@self.MMM
             C=np.einsum('ij,ij->j',self.MMM,self.B)/2
-            self.dE0=C+self.U/(self.Ec)*(Cs[0]*self.B[0,:]-Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:])
+            self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B[0,:]-self.Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:])
             self.initiate_multistep(randomize_initial=False)
             if print_every is None:
                 print_every=int(number_of_steps/100+1)
@@ -651,24 +682,137 @@ class CBTmontecarlo:
             self.final_currents=np.sum(np.array(self.dQp)[transient::,:],axis=0)/np.sum(np.array(self.dtp)[transient::,:],axis=0)
             return self.final_currents
 
+class conductance(CBTmontecarlo):
+    
+    def __init__(self,N,T,Ec,Gt,offset_C=None,second_order_C=None,n0=None,gi=None,U=0,dtype='float64',number_of_concurrent=1,dC=None):
+        if dC is None:
+            dC=0
+            self.dC=dC
+        else:
+            self.dC=dC
+        if gi is None:
+            gi=1
+            self.gi=gi
+        else:
+            self.gi=gi
+        if n0 is None:
+            n0=np.array([0]*(N-1))
+        elif n0=='random':
+            n0=np.array(random.choices(np.arange(11)-5,k=N-1,weights=np.exp(-0.2*(np.arange(11)-5)**2)))
 
+        if second_order_C is None:
+            second_order_C=np.zeros((N,),dtype=dtype)
+            self.second_order_C=second_order_C#units of e/Ec=160[fmF]/Ec[microeV]
+        else:
+            self.second_order_C=second_order_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
+        if offset_C is None:
+            offset_C=np.zeros((N-1,),dtype=dtype)
+            self.offset_C=offset_C
+        else:
+            self.offset_C=offset_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
+            
+        self.Ec=Ec #units of eV
+        self.N=N
+        self.n0=n0.astype(dtype) #units of number of electrons
+        self.n=n0.astype(dtype)
+        self.Cs=np.ones((N,),dtype=dtype)+dC #units of e/Ec=160 [fmF]/Ec[microeV]
+        
+        self.U=U #units of eV
+        
+        # self.neff=self.neff_f(self.n0)
+        self.T=T
+        self.kBT=kB*T #units of eV
+        self.u=self.Ec/(self.kBT)
+        self.Gt=Gt
+        self.dtype=dtype
+        self.gi=gi
+        self.number_of_concurrent=number_of_concurrent
+            
+    def f(self,U):
+        N=self.N
+        T=self.T
+        Ec=self.Ec
+        Gt=self.Gt
+        offset_C=self.offset_C
+        second_order_C=self.second_order_C
+        n0=self.n0
+        gi=self.gi
+        dtype=self.dtype
+        number_of_concurrent=self.number_of_concurrent
+        dC=self.dC
+        
+        
+        self.CBT=CBTmontecarlo(N,T,Ec,Gt,offset_C,second_order_C,n0,gi,U,dtype,number_of_concurrent,dC)
+        
+        self.CBT(self.number_of_steps,self.transient,self.store_interval,self.number_of_concurrent)
+
+        current=self.CBT(self.number_of_steps,self.transient,print_every=self.store_interval,number_of_concurrent=number_of_concurrent)
+        if number_of_concurrent>1:
+            dQ=np.array(self.CBT.dQp)[transient::,:]
+            dt=np.array(self.CBT.dtp)[transient::,:]
+        else:
+            dQ=np.array(self.CBT.dQp)[transient::]
+            dt=np.array(self.CBT.dtp)[transient::]
+        #sigI=np.sqrt(np.var(dQ,axis=0)/np.sum(dt,axis=0)**2+(np.sum(dQ,axis=0)/np.sum(dt,axis=0))**2*np.var(dt,axis=0)/np.sum(dt,axis=0)**2)*np.sqrt(number_of_steps/print_every-transient)
+
+        return current,dQ,dt
+    
+    def run(self,Us,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,n_jobs=4):
+        if number_of_concurrent is None:
+            number_of_concurrent=self.number_of_concurrent
+        else:
+            self.number_of_concurrent=number_of_concurrent
+        if T is None:
+            T=self.T
+        else:
+            self.T=T 
+        self.number_of_steps=number_of_steps
+        self.store_interval=store_interval
+        self.transient=transient
+        self.Us=Us
+        Is=Parallel(n_jobs=n_jobs,verbose=50)(delayed(self.f)(U) for U in Us)
+        self.currents=np.array([I[0] for I in Is])
+        self.dQ=np.array([I[1] for I in Is])
+        self.dt=np.array([I[2] for I in Is])
+        if number_of_concurrent>1:
+            self.currentsm=np.mean(self.currents,axis=1)
+        else:
+            self.currentsm=np.mean(self.currents)
+        
+        self.G=(self.currentsm[points:2*points]-self.currentsm[0:points])/(Us[points:2*points]-Us[0:points])
+        return self.G,Is
+    def auto(self,x,step):
+        xm=np.mean(x)
+        A=(np.roll(x,step)-xm)*(x-xm)
+        A=A[step::]
+        num=np.mean(A)/np.var(x)
+        return num
 #%%
 if __name__=='__main__':
     
     N=100
-    test=np.linspace(1,N,N)
-
     n0=0*np.array(random.choices(np.arange(11)-5,k=N-1,weights=np.exp(-0.2*(np.arange(11)-5)**2)))#-np.ones((N-1,))*10
+    # array([ 513.,    0.,   -2.,    2.,    1.,    1.,    0.,   -2.,    3.,
+    #          -1.,    1.,   -1.,   -1.,   -3.,    2.,    4.,   -4.,    5.,
+    #          -5.,   -1.,    3.,    0.,   -3.,    6.,   -8.,    7.,   -2.,
+    #          -5.,    7.,   -5.,    3.,   -1.,    2.,    1.,   -4.,    1.,
+    #           0.,   -2.,    7.,   -2.,   -7.,    0.,    1.,   -1.,    3.,
+    #           1.,   -9.,    8.,    4.,   -9.,    8.,   -3.,    1.,   -1.,
+    #           1.,    0.,   -3.,    0.,    7.,   -3.,    1.,   -3.,   -3.,
+    #           4.,   -4.,    1.,    1.,    1.,    2.,   -2.,    5.,   -1.,
+    #          -4.,    2.,    2.,    2.,   -4.,    3.,    1.,   -2.,   -7.,
+    #           1.,    1.,    3.,    1.,   -3.,   -2.,    0.,    6.,   -1.,
+    #          -3.,    2.,    2.,   -4.,   -2.,    4.,    6.,   -4., -514.])
     # n0[40:60]=n0[40:60]+100
-    Cs=np.ones((N,))
-    offset_C=-0*np.ones((N-1,))*1e-4
-    offset_q=0*n0/N
-    second_order_C=0*Cs*1e-1
+    # Cs=np.ones((N,))
+    # offset_C=-0*np.ones((N-1,))*1e-4
+    # offset_q=0*n0/N
+    # second_order_C=0*Cs*1e-1
     Ec=4e-6
     Gt=2e-5
     gi=np.ones((2*N,))
 
-    T=0.075
+    T=0.2
     FWHM=5.439*kB*T*N
     
     points=20
@@ -683,6 +827,13 @@ if __name__=='__main__':
     U=Us[2]
 
     a=time()
+    number_of_steps=10000
+    transient=2
+    print_every=100
+    number_of_concurrent=10
+    gg=conductance(N,T,Ec,Gt,n0=n0)
+    G,Is=gg.run(Us,number_of_steps=number_of_steps,transient=transient,store_interval=print_every,number_of_concurrent=number_of_concurrent,n_jobs=4)
+    
     # CBT=CBTmontecarlo(N,offset_q,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64')
     # number_of_steps=10000
     # transient=2
@@ -729,50 +880,51 @@ if __name__=='__main__':
     #     dt=np.array(CBT.dtp2)[transient::]
     #     sigI2=np.sqrt(np.var(dQ)/np.sum(np.array(dt))**2+(np.sum(dQ)/np.sum(dt))**2*np.var(dt)/np.sum(dt)**2)*np.sqrt(number_of_steps/print_every-transient)
     #     return current,current2,sigI,sigI2
-    number_of_steps=10000
-    transient=5
-    print_every=200
-    def f(U):
+    
+    # number_of_steps=4000
+    # transient=5
+    # print_every=200
+    # def f(U):
         
-        CBT=CBTmontecarlo(N,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64',number_of_concurrent=200)
+    #     CBT=CBTmontecarlo(N,n0,U,T,Cs,offset_C,second_order_C,Ec,Gt,gi,dtype='float64',number_of_concurrent=100)
 
-        current=CBT(number_of_steps,transient,print_every=print_every,number_of_concurrent=50)
-        dQ=np.array(CBT.dQp)[transient::,:]
-        dt=np.array(CBT.dtp)[transient::,:]
-        sigI=np.sqrt(np.var(dQ,axis=0)/np.sum(dt,axis=0)**2+(np.sum(dQ,axis=0)/np.sum(dt,axis=0))**2*np.var(dt,axis=0)/np.sum(dt,axis=0)**2)*np.sqrt(number_of_steps/print_every-transient)
+    #     current=CBT(number_of_steps,transient,print_every=print_every,number_of_concurrent=100)
+    #     dQ=np.array(CBT.dQp)[transient::,:]
+    #     dt=np.array(CBT.dtp)[transient::,:]
+    #     #sigI=np.sqrt(np.var(dQ,axis=0)/np.sum(dt,axis=0)**2+(np.sum(dQ,axis=0)/np.sum(dt,axis=0))**2*np.var(dt,axis=0)/np.sum(dt,axis=0)**2)*np.sqrt(number_of_steps/print_every-transient)
         
 
-        return current,sigI,dQ,dt
+    #     return current,dQ,dt
     
-<<<<<<< Updated upstream
-    Is=Parallel(n_jobs=4,verbose=50)(delayed(f)(U) for U in Us)
-=======
-    Is=Parallel(n_jobs=8,verbose=50)(delayed(f)(U) for U in Us)
->>>>>>> Stashed changes
-    currents=np.array([I[0] for I in Is])
-    dcurrents=np.array([I[1] for I in Is])
-    plt.figure()
-    for j in np.arange(len(currents[0,:])):
-        plt.errorbar(Us,currents[:,j],yerr=dcurrents[:,j]/np.sqrt(len(dcurrents[0,:])),fmt='.',color=[0,0,j/len(dcurrents[0,:])])
-    currentsm=np.mean(currents,axis=1)
+    # Is=Parallel(n_jobs=4,verbose=50)(delayed(f)(U) for U in Us)
+
+    # currents=np.array([I[0] for I in Is])
+    # dcurrents=np.array([I[1] for I in Is])
+    # dQ=np.array([I[2] for I in Is])
+    # dt=np.array([I[3] for I in Is])
+    # dcurrents=np.array([I[1] for I in Is])
+    # plt.figure()
+    # for j in np.arange(len(currents[0,:])):
+    #     plt.errorbar(Us,currents[:,j],yerr=dcurrents[:,j]/np.sqrt(len(dcurrents[0,:])),fmt='.',color=[0,0,j/len(dcurrents[0,:])])
+    # currentsm=np.mean(currents,axis=1)
     
-    gm1=(currentsm[points:2*points]-currentsm[0:points])/(Us[points:2*points]-Us[0:points])
+    # gm1=(currentsm[points:2*points]-currentsm[0:points])/(Us[points:2*points]-Us[0:points])
     
-    b=time()
-    print(b-a)
+    # b=time()
+    # print(b-a)
     
-    def CBT_model_g(x):
-        return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
+    # def CBT_model_g(x):
+    #     return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
 
 
 
-    def CBT_model_G(V):
+    # def CBT_model_G(V):
         
-        return Gt*(1-Ec*CBT_model_g(V/(N*kB*T))/(kB*T))
+    #     return Gt*(1-Ec*CBT_model_g(V/(N*kB*T))/(kB*T))
 
-    plt.figure()
-    plt.errorbar(Us[points:2*points],gm1+2*Gt,fmt='.')
-    plt.plot(np.linspace(Us[0],Us[-1],1000),CBT_model_G(np.linspace(Us[0],Us[-1],1000)))
+    # plt.figure()
+    # plt.errorbar(Us[points:2*points],gm1,fmt='.')
+    # plt.plot(np.linspace(Us[0],Us[-1],1000),CBT_model_G(np.linspace(Us[0],Us[-1],1000)))
     
 
     # for U in 
