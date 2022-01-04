@@ -806,8 +806,8 @@ class conductance:
 
         points=self.points
         fig,ax=plt.subplots()
-        plt.title('MC for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e, sample interval={}, \n steps/run={}, runs={}'.format(self.N,self.T*1e3,self.Ec*1e6,self.Gt*1e6,self.q0,
-                                                                                                                                                            self.store_interval,self.number_of_steps,self.number_of_concurrent))
+        plt.title('MC for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e, steps between samples={}, \n steps/(run*datapoint)={}, runs/datapoint={}, transient interval={}'.format(self.N,self.T*1e3,self.Ec*1e6,self.Gt*1e6,self.q0,
+                                                                                                                                                            self.store_interval,self.number_of_steps,self.number_of_concurrent,self.transient*self.store_interval))
         
         Us=self.Us
         Vs=(Us[points:2*points]+Us[0:points])/2
@@ -842,7 +842,7 @@ class conductance:
                 fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance1.png')
                 fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance2.png')
         
-    def __call__(self,V,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,n_jobs=4,dV=None,split=True,plot=True):
+    def __call__(self,V,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,n_jobs=4,dV=None,split=True,plot=True,save_data=True):
         self.Vhalf=5.439*kB*self.T*self.N
         if split:
             if dV is None:
@@ -885,18 +885,18 @@ if __name__=='__main__':
     Ec=4e-6
     Gt=2e-5
     gi=np.ones((2*N,))
-    T=0.2
+    T=0.1
     FWHM=5.439*kB*T*N
     q0=0
-    points=20
-    lim=3.5*FWHM
+    points=21
+    lim=3*FWHM
     dV=FWHM/50
     Vs=np.linspace(-lim,lim,points)
 
-    number_of_steps=12000
-    transient=2
+    number_of_steps=20000
+    transient=4
     print_every=1000
-    number_of_concurrent=15
+    number_of_concurrent=50
     
     
     gg=conductance(N,T,Ec,Gt,n0=n0)
@@ -904,7 +904,7 @@ if __name__=='__main__':
                       transient=transient,
                       store_interval=print_every,
                       number_of_concurrent=number_of_concurrent,
-                      n_jobs=4)
+                      n_jobs=4,dV=FWHM/60)
     
     # def plotG():
     #     plt.figure()
