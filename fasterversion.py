@@ -84,7 +84,7 @@ class CBTmontecarlo:
         self.Ec=Ec #units of eV
         self.N=N
         self.n0=n0.astype(dtype) #units of number of electrons
-        self.n=n0.astype(dtype)#np.array([n0.astype(dtype)]*self.Number_of_Us).T
+        self.n=n0.astype(dtype)#np.array([n0.astype(dtype)]*self.ofof_Us).T
         
         self.Cs=np.ones((N,),dtype=dtype)+dC #units of e/Ec=160 [fmF]/Ec[microeV]
         
@@ -132,12 +132,14 @@ class CBTmontecarlo:
     def update_number_of_concurrent(self,number_of_concurrent):
         self.number_of_concurrent=number_of_concurrent
         self.MMM=np.tile(self.MM,(1,number_of_concurrent*self.number_of_Us))
+        self.MMM_withoutU=np.tile(self.MM,(1,number_of_concurrent))
         # self.A=self.MMM.T@self.Cinv
         self.B=self.Cinv@self.MMM
         self.BB=self.Cinv@self.MM
-
+        self.B_withoutU=self.Cinv@self.MMM_withoutU
+        
         C=np.einsum('ij,ij->j',self.MMM,self.B)/2
-        bound=np.kron(self.U/(self.Ec),(self.Cs[0]*self.B[0,:]-self.Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:]))
+        bound=np.kron(self.U/(self.Ec),(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:]))
         self.boundary_works=self.U.repeat(number_of_concurrent)/(2*self.Ec)
         self.dE0=C+bound
     
@@ -262,7 +264,7 @@ class CBTmontecarlo:
             
         if update==False:
             # try:
-                if self.number_of_concurrent==1:
+                if self.number_of_concurrent*self.number_of_Us==1:
                         
                     try:
                         self.p=p/Norm
@@ -416,13 +418,14 @@ class CBTmontecarlo:
                 self.ns[j+1]=self.n0+np.array(random.choices(np.arange(11)-5,k=N-1,weights=np.exp(-0.2*(np.arange(11)-5)**2)))
         self.ns=self.ns.T
         return self.ns
+
     def multistep(self,store_data=False):
         # with np.errstate(divide='raise'):
             try:
                 neff=self.ns#self.neff_fnD(self.ns)
                 # self.QQ_nD(neff)
                 # self.Q0Q_nD(neff)
-                self.gammas2=self.update_transition_rate(neff).reshape(self.number_of_concurrent,2*self.N)
+                self.gammas2=self.update_transition_rate(neff).reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
                 self.Gamsum=np.sum(self.gammas2,axis=1)
                 self.Gamdif=np.sum(self.gammas2[:,0:self.N]-self.gammas2[:,self.N::],axis=1)
                 self.P(neff)
@@ -477,7 +480,7 @@ class CBTmontecarlo:
             self.number_of_concurrent=number_of_concurrent
             if print_every is None:
                 print_every=int(number_of_steps/100+1)
-            # fig2,ax2=plt.subplots()
+            
             for i in np.arange(number_of_steps):
                 if print_every != 0:
                     if i%print_every==print_every-1:
@@ -496,22 +499,23 @@ class CBTmontecarlo:
                 print('n0 is being moved forward through the transient window')
 
                 self.update_number_of_concurrent(1)
+                
+                self.ns=np.array([self.n0]*self.number_of_Us).T
                 for j in np.arange(transient*print_every):
-                    self.step(store_data=False)
+                    self.multistep(store_data=False)
                     
-                self.n0=np.array(self.n)
+                # self.n0=np.array(self.n)
+                
                 del self.gammas
                 del self.p
 
             self.update_number_of_concurrent(number_of_concurrent)
-            # self.MMM=np.tile(self.MM,(1,self.number_of_concurrent))
-            # self.A=self.MMM.T@self.Cinv
-            # self.B=self.Cinv@self.MMM
-            # C=np.einsum('ij,ij->j',self.MMM,self.B)/2
-            # self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B[0,:]-self.Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:])
+
             print('initiating multistep')
-            self.initiate_multistep(randomize_initial=False)
+            
+            # self.initiate_multistep(randomize_initial=False)
             print(self.ns)
+            self.ns=self.ns.repeat(self.number_of_concurrent,axis=1)
             if print_every is None:
                 print_every=int(number_of_steps/100+1)
             for i in np.arange(number_of_steps):
@@ -529,7 +533,9 @@ class CBTmontecarlo:
                 self.final_currents=np.sum(np.array(self.dQp),axis=0)/np.sum(np.array(self.dtp),axis=0)
             else:
                 self.final_currents=np.sum(np.array(self.dQp)[transient::,:],axis=0)/np.sum(np.array(self.dtp)[transient::,:],axis=0)
+                
             return self.final_currents
+        
 
 class conductance:
     
@@ -606,7 +612,33 @@ class conductance:
         #sigI=np.sqrt(np.var(dQ,axis=0)/np.sum(dt,axis=0)**2+(np.sum(dQ,axis=0)/np.sum(dt,axis=0))**2*np.var(dt,axis=0)/np.sum(dt,axis=0)**2)*np.sqrt(number_of_steps/print_every-transient)
 
         return current,dQ,dt
-    
+    def f2(self,U):
+        N=self.N
+        T=self.T
+        Ec=self.Ec
+        Gt=self.Gt
+        offset_C=self.offset_C
+        second_order_C=self.second_order_C
+        n0=self.n0
+        gi=self.gi
+        dtype=self.dtype
+        number_of_concurrent=self.number_of_concurrent
+        dC=self.dC
+        
+        
+        self.CBT=CBTmontecarlo(N,T,Ec,Gt,offset_C,second_order_C,n0,gi,U,dtype,number_of_concurrent,dC)
+        
+
+        current=self.CBT(self.number_of_steps,self.transient,print_every=self.store_interval,number_of_concurrent=number_of_concurrent,skip_transient=self.skip_transient)
+        if number_of_concurrent>1:
+            dQ=np.array(self.CBT.dQp)[transient::,:]
+            dt=np.array(self.CBT.dtp)[transient::,:]
+        else:
+            dQ=np.array(self.CBT.dQp)[transient::]
+            dt=np.array(self.CBT.dtp)[transient::]
+        #sigI=np.sqrt(np.var(dQ,axis=0)/np.sum(dt,axis=0)**2+(np.sum(dQ,axis=0)/np.sum(dt,axis=0))**2*np.var(dt,axis=0)/np.sum(dt,axis=0)**2)*np.sqrt(number_of_steps/print_every-transient)
+
+        return current,dQ,dt   
     def run(self,Us,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,n_jobs=4,parallelize=True):
         if number_of_concurrent is None:
             number_of_concurrent=self.number_of_concurrent
@@ -643,6 +675,42 @@ class conductance:
         self.Gs=(self.currents[points:2*points,:]-self.currents[0:points,:])/np.array([(Us[points:2*points]-Us[0:points])]).repeat(len(self.currents[0,:]),axis=0).T
         self.Gsm=np.sum(self.Gs,axis=1)/len(self.Gs[0,:])
         self.Gstd=np.std(self.Gs,axis=1)
+        return self.Gsm,self.Gstd,self.Gs,Is
+    def run2(self,Us,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,parallelize=True):
+        if number_of_concurrent is None:
+            number_of_concurrent=self.number_of_concurrent
+        else:
+            self.number_of_concurrent=number_of_concurrent
+        if T is None:
+            T=self.T
+        else:
+            self.T=T 
+        self.number_of_steps=number_of_steps
+        self.store_interval=store_interval
+        self.transient=transient
+        self.Us=Us
+        self.now=str(datetime.now()).replace(':','.')
+        a=time()
+
+        current,dQ,dt=self.f(Us)
+
+        b=time()
+        self.simulation_time=b-a
+        # self.Is=Is
+        self.currents=np.array([current[self.number_of_concurrent*s:self.number_of_concurrent*(s+1)] for s in np.arange(len(Us))])
+        self.dQ=np.array([dQ[:,self.number_of_concurrent*s:self.number_of_concurrent*(s+1)] for s in np.arange(len(Us))])
+        self.dt=np.array([dt[:,self.number_of_concurrent*s:self.number_of_concurrent*(s+1)] for s in np.arange(len(Us))])
+        if number_of_concurrent>1:
+            self.currentsm=np.mean(self.currents,axis=1)
+        else:
+            self.currentsm=np.mean(self.currents)
+        self.points=int(len(self.currentsm)/2)
+        points=self.points
+        self.Gs=(self.currents[points:2*points,:]-self.currents[0:points,:])/np.array([(Us[points:2*points]-Us[0:points])]).repeat(len(self.currents[0,:]),axis=0).T
+        self.Gsm=np.sum(self.Gs,axis=1)/len(self.Gs[0,:])
+        self.Gstd=np.std(self.Gs,axis=1)
+        Is=None
+        self.Is=Is
         return self.Gsm,self.Gstd,self.Gs,Is
     def auto(self,x,step):
         xm=np.mean(x)
@@ -695,7 +763,7 @@ class conductance:
                 fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance1.png')
                 fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance2.png')
         
-    def __call__(self,V,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,n_jobs=4,dV=None,split=True,plot=True,save_data=True,parallelize=True):
+    def __call__(self,V,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,n_jobs=4,dV=None,split=True,plot=True,save_data=True,parallelize=True,internal_parallelization=True):
         self.Vhalf=5.439*kB*self.T*self.N
         try:
             if split:
@@ -708,7 +776,10 @@ class conductance:
                 Us=np.concatenate((Us,V+self.dV))
             else:
                 Us=V
-            self.run(Us,number_of_steps,store_interval,transient,T,number_of_concurrent,n_jobs,parallelize)
+            if internal_parallelization:
+                self.run2(Us,number_of_steps,store_interval,transient,T,number_of_concurrent,parallelize)
+            else:
+                self.run(Us,number_of_steps,store_interval,transient,T,number_of_concurrent,n_jobs,parallelize)
             if plot:
                 self.plotG(save=True)
             return self.Gsm,self.Gstd,self.Gs,self.Is
@@ -758,24 +829,21 @@ if __name__=='__main__':
     FWHM=5.439*kB*T*N
     q0=0
     # points=21
-    points=53
+    points=5
     lim=3*FWHM
     dV=FWHM/50
     Vs=np.linspace(-lim,lim,points)
     # Vs=np.concatenate((Vs,np.linspace(-8*lim/(points),8*lim/(points),8)))
 
-    number_of_steps=6000
-    transient=400
-    print_every=100
-    number_of_concurrent=1000
+    number_of_steps=600
+    transient=4000
+    print_every=10
+    number_of_concurrent=100
     
-    
+    # sim=CBTmontecarlo(N,T,Ec,Gt,U=Vs)
+    # sim(100,10,2,number_of_concurrent=3)
     gg=conductance(N,T,Ec,Gt,n0=n0,skip_transient=True)
-    # gg(Vs[0],number_of_steps=number_of_steps,
-    #                   transient=transient,
-    #                   store_interval=print_every,
-    #                   number_of_concurrent=number_of_concurrent,
-    #                   n_jobs=4)
+
     Gsm,Gstd,Gs,Is=gg(Vs,number_of_steps=number_of_steps,
                       transient=transient,
                       store_interval=print_every,
