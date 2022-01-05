@@ -372,8 +372,8 @@ class CBTmontecarlo:
 
     def update_transition_rate(self,n1,update_gammas=True):
 
-        limit1=1e-9
-        limit2=1e9
+        limit1=1e-12
+        limit2=1e12
         # a=time()
         # dE=-(self.energy(n2)-self.energy(n1,boundary_work=False)) #units of Ec
         # print(dE)
@@ -383,22 +383,30 @@ class CBTmontecarlo:
         dE=-self.dE_f(n1)
 
         if dE.ndim==1:
+            c1=-dE*self.u>np.log(limit1)
+            c2=-dE*self.u<np.log(limit2)
+            c5=-dE*self.u<=np.log(limit1)
+            c6=-dE*self.u>=np.log(limit2)
+            dE1=dE[(c1) & (c2)]
             try:
                 Gamma=np.array(self.gammas)#np.zeros_like(dE)
             except AttributeError:
                 Gamma=np.zeros_like(dE)
             try:
-                Gamma[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]=dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]*self.u))
+                Gamma[(c1) & (c2)]=dE1/(1-np.exp(-dE1*self.u))
             except FloatingPointError:
-                print('a floating point error occurred for dE[..]='+str(dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]))
-                Gamma[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]=dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]/(1-np.exp(-dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]*self.u))
-                Gamma[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]=dE[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]*self.u))
+                print('a floating point error occurred for dE[..]='+str(dE1))
+                c3=-dE*self.u<0
+                c4=-dE*self.u>0
+                Gamma[(c1) & (c3)]=dE[(c1) & (c3)]/(1-np.exp(-dE[(c1) & (c3)]*self.u))
+                Gamma[(c4) & (c2)]=dE[(c4) & (c2)]/(1-np.exp(-dE[(c4) & (c2)]*self.u))
                 Gamma[dE*self.u==0.]=1/(self.u)
-            Gamma[-dE*self.u<=np.log(limit1)]=dE[-dE*self.u<=np.log(limit1)]
+            Gamma[c5]=dE[c5]
             try:
-                Gamma[-dE*self.u>=np.log(limit2)]=-dE[-dE*self.u>=np.log(limit2)]*np.exp(dE[-dE*self.u>=np.log(limit2)]*self.u)
+                dE2=dE[c6]
+                Gamma[c6]=-dE2*np.exp(dE2*self.u)
             except FloatingPointError:
-                Gamma[-dE*self.u>=np.log(limit2)]=0
+                Gamma[c6]=0
             # print('updating transition rates')
             # Gamma=Gamma
             if update_gammas:
@@ -645,7 +653,7 @@ class CBTmontecarlo:
                     # self.Ip.append(np.sum(np.array(self.dQp))/np.sum(np.array(self.dtp)))
                 self.indices=pick_event2(self.p)#self.pick_event(neff,1)
                 self.indices=list(self.indices)
-                print(self.indices)
+                # print(self.indices)
                 # Q_new=self.Q0Qn+self.MMM#self.QQ_nD(self.ns,onlyQ=True)
                 n_new=neff+self.MM[:,self.indices]#[:,:,0]
                 self.ns=n_new
@@ -969,7 +977,7 @@ if __name__=='__main__':
     FWHM=5.439*kB*T*N
     q0=0
     # points=21
-    points=2
+    points=52
     lim=3*FWHM
     dV=FWHM/50
     Vs=np.linspace(-lim,lim,points)
@@ -991,7 +999,7 @@ if __name__=='__main__':
                       transient=transient,
                       store_interval=print_every,
                       number_of_concurrent=number_of_concurrent,
-                      n_jobs=4,parallelize=False)
+                      n_jobs=2)
     
     # def plotG():
     #     plt.figure()
