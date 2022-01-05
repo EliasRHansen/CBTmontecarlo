@@ -977,7 +977,7 @@ if __name__=='__main__':
     FWHM=5.439*kB*T*N
     q0=0
     # points=21
-    points=52
+    points=53
     lim=3*FWHM
     dV=FWHM/50
     Vs=np.linspace(-lim,lim,points)
@@ -986,7 +986,7 @@ if __name__=='__main__':
     number_of_steps=6000
     transient=40
     print_every=1000
-    number_of_concurrent=500
+    number_of_concurrent=1000
     
     
     gg=conductance(N,T,Ec,Gt,n0=n0,skip_transient=True)
