@@ -983,10 +983,10 @@ if __name__=='__main__':
     Vs=np.linspace(-lim,lim,points)
     # Vs=np.concatenate((Vs,np.linspace(-8*lim/(points),8*lim/(points),8)))
 
-    number_of_steps=6000
+    number_of_steps=20000
     transient=40
     print_every=1000
-    number_of_concurrent=1000
+    number_of_concurrent=150
     
     
     gg=conductance(N,T,Ec,Gt,n0=n0,skip_transient=True)
