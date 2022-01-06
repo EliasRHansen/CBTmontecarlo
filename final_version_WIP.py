@@ -56,7 +56,7 @@ def pick_event2(x):
 class CBTmain: #just does the simulation, no further analysis
     
     def __init__(self,U,T,Ec,Gt,N,Nruns,Ntransient,number_of_concurrent,Ninterval,skip_transient,parallelization='external',
-                 n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2):
+                 n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1):
 
         if n0 is None:
             n0=np.array([0]*(N-1))
@@ -83,10 +83,15 @@ class CBTmain: #just does the simulation, no further analysis
         self.Ninterval=Ninterval
         self.skip_transient=skip_transient
         self.parallelization=parallelization
-        
+        self.batchsize=batchsize
         if iterable(U):
             self.number_of_Us=len(U)
+            
+            
         else:
+            if self.parallelization !='non':
+                print('voltage is a scalar; setting parallelization to non, since parallelization is not possible')
+                self.parallelization='non'
             self.number_of_Us=1
         # self.neff=self.neff_f(self.n0)
         self.kBT=kB*T #units of eV
@@ -113,12 +118,36 @@ class CBTmain: #just does the simulation, no further analysis
         self.MM=np.concatenate((self.M,-self.M),axis=1)
         transient=int(Nruns/Ninterval)
         self.now=str(datetime.now()).replace(':','.')
+        
         a=time()
-        if (parallelization=='internal'):
-            self.update_number_of_concurrent(number_of_concurrent)
-            self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
-        elif (parallelization=='non'):
+        if (self.parallelization=='internal'):
+            if batchsize>1:
+                voltages=np.array(self.U)
+                voltbatch=[]
+                for j in np.arange(int(np.ceil(self.number_of_Us/batchsize))):
+
+                    voltbatch.append(voltages[j*batchsize:batchsize*(j+1)])
+                    if len(voltbatch[-1])<batchsize:
+                        print('number of Us is not divisible into batches of size '+str(batchsize)+'. This is handled by having the last batch size being: '+str(len(voltbatch[-1])))
+                print(voltbatch)
+                self.dQps=[]
+                self.dtps=[]
+                for V in voltbatch:
+                    self.U=V
+                    self.number_of_Us=len(V)
+                    self.update_number_of_concurrent(number_of_concurrent)
+                    self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
+                    self.dQps.append(self.dQp)
+                    self.dtps.append(self.dtp)
+                self.voltbatch=voltbatch
+            else:
+                print('batchsize is one, but parallization is True, so all voltages a run. To run one at a time, use paralization="non"')
+                self.update_number_of_concurrent(number_of_concurrent)
+                self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
             
+        elif (self.parallelization=='non'):
+            if batchsize>1:
+                print('parallization set to non; batchsize doesnt have any effect')
             if self.number_of_Us==1:
                 self.update_number_of_concurrent(number_of_concurrent)
                 self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
@@ -134,17 +163,44 @@ class CBTmain: #just does the simulation, no further analysis
                     self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
                     self.dQps.append(self.dQp)
                     self.dtps.append(self.dtp)
-                    
-        elif (parallelization=='external'):
+            
+        elif (self.parallelization=='external'):
+            self.number_of_concurrent=number_of_concurrent #otherwise it never gets to be an attribute since __call__ is called inside joblib
             voltages=np.array(self.U)
-            self.number_of_Us=1
-            def f(V):
+            if batchsize>1:
+                voltbatch=[]
+                for j in np.arange(int(np.ceil(self.number_of_Us/batchsize))):
+
+                    voltbatch.append(voltages[j*batchsize:batchsize*(j+1)])
+                    if len(voltbatch[-1])<batchsize:
+                        print('number of Us is not divisible into batches of size '+str(batchsize)+'. This is handled by having the last batch size being: '+str(len(voltbatch[-1])))
+                print(voltbatch)
+                self.voltbatch=voltbatch
+            
+            def f_scalar(V):
                 self.U=V
+                self.number_of_Us=1
+
                 self.update_number_of_concurrent(number_of_concurrent)
                 self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
-                
                 return self.dQp,self.dtp
-            self.Is=Parallel(n_jobs=n_jobs,verbose=50)(delayed(f)(U) for U in voltages)
+            def f_vector(vbatch):
+                self.U=vbatch
+                self.number_of_Us=len(vbatch)
+
+                self.update_number_of_concurrent(number_of_concurrent)
+                self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
+                return self.dQp,self.dtp
+            if batchsize==1:
+                self.Is=Parallel(n_jobs=n_jobs,verbose=50)(delayed(f_scalar)(U) for U in voltages)
+            else:
+                self.Is=Parallel(n_jobs=n_jobs,verbose=50)(delayed(f_vector)(U) for U in voltbatch)
+        try:
+            self.U=voltages
+            self.number_of_Us=len(voltages)
+        except NameError:
+            #'voltages' was not defined, so U wasnt redefined and it is unecessary to reset it.
+            pass
         b=time()
         self.simulation_time=b-a
         print('simulation time: '+str(self.simulation_time))
@@ -193,31 +249,31 @@ class CBTmain: #just does the simulation, no further analysis
             Gamma=np.zeros_like(dE)
             
         if dE.ndim==1:
+            # try:
+            #     Gamma=-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
+            # except FloatingPointError:
+            c1=-dE*self.u>np.log(limit1)
+            c2=-dE*self.u<np.log(limit2)
+            c5=-dE*self.u<=np.log(limit1)
+            c6=-dE*self.u>=np.log(limit2)
+            dE1=dE[(c1) & (c2)]
             try:
-                Gamma=-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
+                Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
             except FloatingPointError:
-                c1=-dE*self.u>np.log(limit1)
-                c2=-dE*self.u<np.log(limit2)
-                c5=-dE*self.u<=np.log(limit1)
-                c6=-dE*self.u>=np.log(limit2)
-                dE1=dE[(c1) & (c2)]
-                try:
-                    Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
-                except FloatingPointError:
-                    print('a floating point error occurred for dE[..]='+str(dE1))
-                    c3=-dE*self.u<0
-                    c4=-dE*self.u>0
-                    dE3=dE[(c1) & (c3)]
-                    dE4=dE[(c4) & (c2)]
-                    Gamma[(c1) & (c3)]=dE3/(1-np.exp(-dE3*self.u))
-                    Gamma[(c4) & (c2)]=dE4/(1-np.exp(-dE4*self.u))
-                    Gamma[dE*self.u==0.]=1/(self.u)
-                Gamma[c5]=dE[c5]
-                try:
-                    dE2=dE[c6]
-                    Gamma[c6]=-dE2*np.exp(dE2*self.u)
-                except FloatingPointError:
-                    Gamma[c6]=0
+                print('a floating point error occurred for dE[..]='+str(dE1))
+                c3=-dE*self.u<0
+                c4=-dE*self.u>0
+                dE3=dE[(c1) & (c3)]
+                dE4=dE[(c4) & (c2)]
+                Gamma[(c1) & (c3)]=dE3/(1-np.exp(-dE3*self.u))
+                Gamma[(c4) & (c2)]=dE4/(1-np.exp(-dE4*self.u))
+                Gamma[dE*self.u==0.]=1/(self.u)
+            Gamma[c5]=dE[c5]
+            try:
+                dE2=dE[c6]
+                Gamma[c6]=-dE2*np.exp(dE2*self.u)
+            except FloatingPointError:
+                Gamma[c6]=0
             # print('updating transition rates')
             Gamma=Gamma
             if update_gammas:
@@ -247,19 +303,6 @@ class CBTmain: #just does the simulation, no further analysis
             p=self.gammas2
         except Exception:
             p=self.update_transition_rate(n).reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
-        # try:
-        #     Norm=self.sumgammas
-        # except Exception:
-        #     Norm=np.sum(p)
-
-        # if self.number_of_concurrent*self.number_of_Us==1:
-                
-        #     try:
-        #         self.p=p/Norm
-        #     except FloatingPointError:
-        #         print('probability not normalized due to floting point error')
-        #     return self.p
-        # else:
             
         self.p=np.einsum('ij,i->ij',p,1/self.Gamsum)
 
@@ -385,16 +428,76 @@ class CBTmain: #just does the simulation, no further analysis
 
 
 class CBT_results:
-    def __init__(self,CBTmain_instance):
+    def __init__(self,CBTmain_instance,transient=None):
         CBT=CBTmain_instance #shorthandname
+        if transient is None:
+            if CBT.skip_transient:
+                transient=0
         if CBT.parallelization=='external':
-            pass
+            if CBT.batchsize==1:
+                self.dQ=np.array([I[0] for I in CBT.Is]) #shape->(voltages,along time dimensio, parallel to time dimension)
+                self.dt=np.array([I[1] for I in CBT.Is]) #shape->(voltages,along time dimensio, parallel to time dimension)
+            else:
+                voltbatch=CBT.voltbatch
+                batchlengths=[len(v) for v in voltbatch]
+                nc=CBT.number_of_concurrent
+                Us=CBT.U
+                number_of_time_steps_with_data=len(CBT.Is[0][0])
+                dQ=np.empty((len(Us),number_of_time_steps_with_data,nc))
+                dt=np.empty((len(Us),number_of_time_steps_with_data,nc))
+                for j in np.arange(len(CBT.Is)):
+                    i1,i2=CBT.Is[j]
+                    dQ1=np.array(i1).reshape(number_of_time_steps_with_data,batchlengths[j],nc)
+                    dt1=np.array(i2).reshape(number_of_time_steps_with_data,batchlengths[j],nc)
+                    dQ1=np.array(dQ1).swapaxes(1,0)
+                    dt1=np.array(dt1).swapaxes(1,0)
+                    
+                    dQ[sum(batchlengths[0:j]):sum(batchlengths[0:j+1]),...]=dQ1
+                    dt[sum(batchlengths[0:j]):sum(batchlengths[0:j+1]),...]=dt1
+                self.dQ=dQ
+                self.dt=dt
+
+            self.currents=np.sum(np.array(self.dQ)[:,transient::,:],axis=1)/np.sum(np.array(self.dt)[:,transient::,:],axis=1)
+            self.currentsm=np.mean(self.currents,axis=1)
+            self.currentsstd=np.std(self.currents,axis=1)
+            self.points=int(len(self.currentsm)/2)
+            points=self.points
+            Us=CBT.U
+            self.Gs=(self.currents[points:2*points,:]-self.currents[0:points,:])/np.array([(Us[points:2*points]-Us[0:points])]).repeat(len(self.currents[0,:]),axis=0).T
+            self.Gsm=np.sum(self.Gs,axis=1)/len(self.Gs[0,:])
+            self.Gstd=np.std(self.Gs,axis=1)
         elif CBT.parallelization=='internal':
-            pass
+            if CBT.batchsize==1:
+                Us=CBT.U
+                self.dQ=np.array(CBT.dQps).reshape(number_of_time_steps_with_data,len(Us),nc)
+                self.dt=np.array(CBT.dtps).reshape(number_of_time_steps_with_data,len(Us),nc)
+            else:
+                voltbatch=CBT.voltbatch
+                batchlengths=[len(v) for v in voltbatch]
+                nc=CBT.number_of_concurrent
+                Us=CBT.U
+                number_of_time_steps_with_data=len(CBT.Is[0][0])
+                dQ=np.empty((len(Us),number_of_time_steps_with_data,nc))
+                dt=np.empty((len(Us),number_of_time_steps_with_data,nc))
+                for j in np.arange(len(CBT.dQps)):
+                    i1=CBT.dQps[j]
+                    i2=CBT.dtps[j]
+                    dQ1=np.array(i1).reshape(number_of_time_steps_with_data,batchlengths[j],nc)
+                    dt1=np.array(i2).reshape(number_of_time_steps_with_data,batchlengths[j],nc)
+                    dQ1=np.array(dQ1).swapaxes(1,0)
+                    dt1=np.array(dt1).swapaxes(1,0)
+                    
+                    dQ[sum(batchlengths[0:j]):sum(batchlengths[0:j+1]),...]=dQ1
+                    dt[sum(batchlengths[0:j]):sum(batchlengths[0:j+1]),...]=dt1
+                self.dQ=dQ
+                self.dt=dt
+            
+                
+                
         elif CBT.parallelization=='non':
             pass
         self.CBTmain_instance=CBTmain_instance
-
+#test
 N=100
 
 Ec=4e-6
@@ -404,10 +507,10 @@ T=0.01
 FWHM=5.439*kB*T*N
 q0=0
 # points=21
-points=5
+points=11
 lim=3*FWHM
 dV=FWHM/50
 Vs=np.linspace(-lim,lim,points)
 
-result=CBTmain(Vs,T,Ec,Gt,N,Nruns=5000,Ntransient=1000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='non',
-             n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2)
+result=CBTmain(Vs,T,Ec,Gt,N,Nruns=4000,Ntransient=1000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='internal',
+              n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1)

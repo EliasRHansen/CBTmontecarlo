@@ -984,7 +984,7 @@ if __name__=='__main__':
     # Vs=np.concatenate((Vs,np.linspace(-8*lim/(points),8*lim/(points),8)))
 
     number_of_steps=2000
-    transient=40
+    transient=400
     print_every=100
     number_of_concurrent=15
     
