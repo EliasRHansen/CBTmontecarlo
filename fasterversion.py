@@ -393,7 +393,7 @@ class CBTmontecarlo:
             except AttributeError:
                 Gamma=np.zeros_like(dE)
             try:
-                Gamma[(c1) & (c2)]=dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
+                Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
             except FloatingPointError:
                 print('a floating point error occurred for dE[..]='+str(dE1))
                 c3=-dE*self.u<0
@@ -977,7 +977,7 @@ if __name__=='__main__':
     FWHM=5.439*kB*T*N
     q0=0
     # points=21
-    points=53
+    points=11
     lim=3*FWHM
     dV=FWHM/50
     Vs=np.linspace(-lim,lim,points)
