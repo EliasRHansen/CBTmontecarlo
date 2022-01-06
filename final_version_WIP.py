@@ -11,7 +11,7 @@ import scipy.sparse as sparse
 from scipy.sparse.linalg import inv
 from copy import copy
 import random as random
-from time import time
+from time import time,time_ns
 from joblib import Parallel,delayed
 from derivative import dxdt
 import einops as eo
@@ -56,7 +56,7 @@ def pick_event2(x):
 class CBTmain: #just does the simulation, no further analysis
     
     def __init__(self,U,T,Ec,Gt,N,Nruns,Ntransient,number_of_concurrent,Ninterval,skip_transient,parallelization='external',
-                 n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=4):
+                 n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2):
 
         if n0 is None:
             n0=np.array([0]*(N-1))
@@ -86,9 +86,6 @@ class CBTmain: #just does the simulation, no further analysis
         
         if iterable(U):
             self.number_of_Us=len(U)
-            if self.parallelization=='external':
-                print('ERROR: if parallelization is external, voltages (U) must be scalars, not array-like. Setting parallelization to internal!')
-                self.parallelization='internal'
         else:
             self.number_of_Us=1
         # self.neff=self.neff_f(self.n0)
@@ -150,6 +147,7 @@ class CBTmain: #just does the simulation, no further analysis
             self.Is=Parallel(n_jobs=n_jobs,verbose=50)(delayed(f)(U) for U in voltages)
         b=time()
         self.simulation_time=b-a
+        print('simulation time: '+str(self.simulation_time))
 
     def update_number_of_concurrent(self,number_of_concurrent):
         self.number_of_concurrent=number_of_concurrent
@@ -157,29 +155,31 @@ class CBTmain: #just does the simulation, no further analysis
         self.MMM=np.tile(self.MM,(1,number_of_concurrent*self.number_of_Us))
         self.B_withoutU=self.Cinv@self.MMM_withoutU
         self.BB=self.Cinv@self.MM
-        
-        if self.parallization=='external' or self.parallization=='non':
+        self.BB=np.array(self.BB,dtype=self.dtype)
+        if iterable(self.U)==False:
             C=np.einsum('ij,ij->j',self.MMM_withoutU,self.B_withoutU)/2
             
             self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])
             self.boundary_works=self.U/(2*self.Ec)
-        elif self.parallelization=='internal':
+        else:
 
             self.B=self.Cinv@self.MMM
             C=np.einsum('ij,ij->j',self.MMM,self.B)/2
             bound=np.kron(self.U/(self.Ec),(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:]))
             self.boundary_works=self.U.repeat(number_of_concurrent)/(2*self.Ec)
             self.dE0=C+bound
-        else:
-            print(str(self.parallelization)+' is not implemented as a value for the parameter parallelization')
+        # else:
+        #     print(str(self.parallelization)+' is not implemented as a value for the parameter parallelization')
             
     def dE_f(self,nn):
         v=(nn.T@self.BB).flatten()
+        # print(v.dtype)
         E=v+self.dE0#units of Ec
         E[::2*self.N]=E[::2*self.N]+self.boundary_works
         E[self.N-1::2*self.N]=E[self.N-1::2*self.N]+self.boundary_works
         E[self.N::2*self.N]=E[self.N::2*self.N]-self.boundary_works
         E[2*self.N-1::2*self.N]=E[2*self.N-1::2*self.N]-self.boundary_works
+
         return E
     def update_transition_rate(self,n1,update_gammas=True):
 
@@ -194,7 +194,7 @@ class CBTmain: #just does the simulation, no further analysis
             
         if dE.ndim==1:
             try:
-                Gamma=dE/(1-np.exp(-dE*self.u))
+                Gamma=-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
             except FloatingPointError:
                 c1=-dE*self.u>np.log(limit1)
                 c2=-dE*self.u<np.log(limit2)
@@ -202,7 +202,7 @@ class CBTmain: #just does the simulation, no further analysis
                 c6=-dE*self.u>=np.log(limit2)
                 dE1=dE[(c1) & (c2)]
                 try:
-                    Gamma[(c1) & (c2)]=dE1/(1-np.exp(-dE1*self.u))
+                    Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
                 except FloatingPointError:
                     print('a floating point error occurred for dE[..]='+str(dE1))
                     c3=-dE*self.u<0
@@ -219,7 +219,7 @@ class CBTmain: #just does the simulation, no further analysis
                 except FloatingPointError:
                     Gamma[c6]=0
             # print('updating transition rates')
-            # Gamma=Gamma
+            Gamma=Gamma
             if update_gammas:
                 self.gammas=Gamma
                 self.sumgammas=sum(self.gammas)
@@ -244,26 +244,26 @@ class CBTmain: #just does the simulation, no further analysis
         """
         try:
             
-            p=self.gammas
+            p=self.gammas2
         except Exception:
-            p=self.update_transition_rate(n)
-        try:
-            Norm=self.sumgammas
-        except Exception:
-            Norm=np.sum(p)
+            p=self.update_transition_rate(n).reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
+        # try:
+        #     Norm=self.sumgammas
+        # except Exception:
+        #     Norm=np.sum(p)
 
-        if self.number_of_concurrent*self.number_of_Us==1:
+        # if self.number_of_concurrent*self.number_of_Us==1:
                 
-            try:
-                self.p=p/Norm
-            except FloatingPointError:
-                print('probability not normalized due to floting point error')
-            return self.p
-        else:
+        #     try:
+        #         self.p=p/Norm
+        #     except FloatingPointError:
+        #         print('probability not normalized due to floting point error')
+        #     return self.p
+        # else:
             
-            self.p=np.einsum('ij,i->ij',self.gammas2,1/self.Gamsum)
+        self.p=np.einsum('ij,i->ij',p,1/self.Gamsum)
 
-            return self.p
+        return self.p
 
     def dt_f(self,n):
 
@@ -350,7 +350,7 @@ class CBTmain: #just does the simulation, no further analysis
             self.update_number_of_concurrent(1)
             
             self.ns=np.array([self.n0]*self.number_of_Us).T
-            print('initiating multistep for the transient window for '+str(self.Number_of_concurrent)+' charge configurations')
+            print('initiating multistep for the transient window for '+str(self.number_of_concurrent)+' charge configurations to move through the transient regime')
             for j in np.arange(transient*print_every):
                 self.multistep(store_data=False)
                 
@@ -361,9 +361,9 @@ class CBTmain: #just does the simulation, no further analysis
         else:
             self.ns=np.array([self.n0]*self.number_of_Us).T
         self.update_number_of_concurrent(number_of_concurrent)
-        print(self.ns)
+
         self.ns=self.ns.repeat(self.number_of_concurrent,axis=1)
-        print('initiating multistep for the transient window for '+str(self.Number_of_concurrent*self.number_of_concurrent)+' charge configurations')
+        print('initiating multistep for the transient window for '+str(self.number_of_concurrent*self.number_of_Us)+' charge configurations')
         print('initial charge configurations (columns):')
         print(self.ns)
         if print_every is None:
@@ -380,6 +380,7 @@ class CBTmain: #just does the simulation, no further analysis
             else:
                 self.multistep(store_data=False)
         print('done')
+        
 
 
 
@@ -393,4 +394,20 @@ class CBT_results:
         elif CBT.parallelization=='non':
             pass
         self.CBTmain_instance=CBTmain_instance
-        
+
+N=100
+
+Ec=4e-6
+Gt=2e-5
+gi=np.ones((2*N,))
+T=0.01
+FWHM=5.439*kB*T*N
+q0=0
+# points=21
+points=5
+lim=3*FWHM
+dV=FWHM/50
+Vs=np.linspace(-lim,lim,points)
+
+result=CBTmain(Vs,T,Ec,Gt,N,Nruns=5000,Ntransient=1000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='non',
+             n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2)

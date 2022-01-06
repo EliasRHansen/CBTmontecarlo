@@ -393,7 +393,7 @@ class CBTmontecarlo:
             except AttributeError:
                 Gamma=np.zeros_like(dE)
             try:
-                Gamma[(c1) & (c2)]=dE1/(1-np.exp(-dE1*self.u))
+                Gamma[(c1) & (c2)]=dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
             except FloatingPointError:
                 print('a floating point error occurred for dE[..]='+str(dE1))
                 c3=-dE*self.u<0
@@ -983,10 +983,10 @@ if __name__=='__main__':
     Vs=np.linspace(-lim,lim,points)
     # Vs=np.concatenate((Vs,np.linspace(-8*lim/(points),8*lim/(points),8)))
 
-    number_of_steps=20000
+    number_of_steps=2000
     transient=40
-    print_every=1000
-    number_of_concurrent=150
+    print_every=100
+    number_of_concurrent=15
     
     
     gg=conductance(N,T,Ec,Gt,n0=n0,skip_transient=True)
