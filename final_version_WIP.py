@@ -18,11 +18,13 @@ import einops as eo
 import os
 from datetime import datetime
 from numba import njit
-np.seterr(all = 'raise')
-#########Inpu
-kB=8.617*1e-5
 
+
+np.seterr(all = 'raise')
+kB=8.617*1e-5
 e_SI=1.602*1e-19
+
+
 def iterable(m):
     """
     
@@ -52,16 +54,20 @@ def pick_event2(x):
     for P in np.arange(i):
         index[P]=np.searchsorted(np.cumsum(x[P]), np.random.random(), side="right")
     return index
+def split_voltages(V,dV):
+    Us=V-dV
+    Us=np.concatenate((Us,V+dV))
+    return Us
 
 class CBTmain: #just does the simulation, no further analysis
     
     def __init__(self,U,T,Ec,Gt,N,Nruns,Ntransient,number_of_concurrent,Ninterval,skip_transient,parallelization='external',
-                 n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1):
+                 n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1,q0=0):
 
         if n0 is None:
-            n0=np.array([0]*(N-1))
+            n0=np.array([0]*(N-1))+q0
         else:
-            self.n0=n0
+            self.n0=n0+q0
         if second_order_C is None:
             second_order_C=np.zeros((N,),dtype=dtype)
             self.second_order_C=second_order_C#units of e/Ec=160[fmF]/Ec[microeV]
@@ -84,6 +90,7 @@ class CBTmain: #just does the simulation, no further analysis
         self.skip_transient=skip_transient
         self.parallelization=parallelization
         self.batchsize=batchsize
+        self.q0=q0
         if iterable(U):
             self.number_of_Us=len(U)
             
@@ -94,6 +101,7 @@ class CBTmain: #just does the simulation, no further analysis
                 self.parallelization='non'
             self.number_of_Us=1
         # self.neff=self.neff_f(self.n0)
+        self.T=T
         self.kBT=kB*T #units of eV
         self.u=self.Ec/(self.kBT)
         self.Gt=Gt
@@ -118,7 +126,8 @@ class CBTmain: #just does the simulation, no further analysis
         self.MM=np.concatenate((self.M,-self.M),axis=1)
         transient=int(Nruns/Ninterval)
         self.now=str(datetime.now()).replace(':','.')
-        
+        print('running '+str(number_of_concurrent)+'simulations initiated after a transient period of'+str(Ntransient)+'steps. This is done for '+str(self.number_of_Us)+' voltages, that are run in batches of size '+str(batchsize)+'.')
+        print('The total number of simulations (that gives rise to a datapoint for current) is: '+str(number_of_concurrent*self.number_of_Us))
         a=time()
         if (self.parallelization=='internal'):
             if batchsize>1:
@@ -310,33 +319,12 @@ class CBTmain: #just does the simulation, no further analysis
 
     def dt_f(self,n):
 
-        if self.number_of_concurrent*self.number_of_Us==1:
-            try:
-                # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
-                self.dts=self.factor_SI/self.sumgammas
-                return self.dts
-                # return sum(self.dts)
-            except Exception:
-                self.update_transition_rate(n)
-                # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
-                return self.dts
-                self.dts=self.factor_SI/self.sumgammas
-                # return sum(self.dts)
-        else:
-                self.dts=self.factor_SI/self.Gamsum
-                return self.dts
+        self.dts=self.factor_SI/self.Gamsum
+        return self.dts
     def dQ_f(self,n):
-        if self.number_of_concurrent==1:
-            try:
-                self.dQ=-(e_SI/self.N)*sum(self.gammas[0:self.N]-self.gammas[self.N::])/self.sumgammas
-                return self.dQ
-            except Exception:
-                self.update_transition_rate(self.Q(n),self.Q0(n))
-                self.dQ=-(e_SI/self.N)*sum(self.gammas[0:self.N]-self.gammas[self.N::])/self.sumgammas
-                return self.dQ
-        else:
-                self.dQ=-(e_SI/self.N)*self.Gamdif/self.Gamsum
-                return self.dQ
+
+        self.dQ=-(e_SI/self.N)*self.Gamdif/self.Gamsum
+        return self.dQ
             
     def multistep(self,store_data=False):
 
@@ -407,8 +395,8 @@ class CBTmain: #just does the simulation, no further analysis
 
         self.ns=self.ns.repeat(self.number_of_concurrent,axis=1)
         print('initiating multistep for the transient window for '+str(self.number_of_concurrent*self.number_of_Us)+' charge configurations')
-        print('initial charge configurations (columns):')
-        print(self.ns)
+        # print('initial charge configuration (columns):')
+        # print(self.n0)
         if print_every is None:
             print_every=int(number_of_steps/100+1)
         for i in np.arange(number_of_steps):
@@ -427,9 +415,12 @@ class CBTmain: #just does the simulation, no further analysis
 
 
 
-class CBT_results:
+class CBT_data_analysis:
     def __init__(self,CBTmain_instance,transient=None):
         CBT=CBTmain_instance #shorthandname
+        self.raw_data=CBT
+        self.now=CBT.now
+        self.simulation_time=CBT.simulation_time
         if transient is None:
             if CBT.skip_transient:
                 transient=0
@@ -457,31 +448,25 @@ class CBT_results:
                 self.dQ=dQ
                 self.dt=dt
 
-            self.currents=np.sum(np.array(self.dQ)[:,transient::,:],axis=1)/np.sum(np.array(self.dt)[:,transient::,:],axis=1)
-            self.currentsm=np.mean(self.currents,axis=1)
-            self.currentsstd=np.std(self.currents,axis=1)
-            self.points=int(len(self.currentsm)/2)
-            points=self.points
-            Us=CBT.U
-            self.Gs=(self.currents[points:2*points,:]-self.currents[0:points,:])/np.array([(Us[points:2*points]-Us[0:points])]).repeat(len(self.currents[0,:]),axis=0).T
-            self.Gsm=np.sum(self.Gs,axis=1)/len(self.Gs[0,:])
-            self.Gstd=np.std(self.Gs,axis=1)
         elif CBT.parallelization=='internal':
             if CBT.batchsize==1:
                 Us=CBT.U
-                self.dQ=np.array(CBT.dQps).reshape(number_of_time_steps_with_data,len(Us),nc)
-                self.dt=np.array(CBT.dtps).reshape(number_of_time_steps_with_data,len(Us),nc)
+                number_of_time_steps_with_data=len(CBT.dQp)
+                nc=CBT.number_of_concurrent
+                
+                self.dQ=np.array(CBT.dQp).reshape(number_of_time_steps_with_data,len(Us),nc).swapaxes(1,0)
+                self.dt=np.array(CBT.dtp).reshape(number_of_time_steps_with_data,len(Us),nc).swapaxes(1,0)
             else:
                 voltbatch=CBT.voltbatch
                 batchlengths=[len(v) for v in voltbatch]
                 nc=CBT.number_of_concurrent
                 Us=CBT.U
-                number_of_time_steps_with_data=len(CBT.Is[0][0])
+                number_of_time_steps_with_data=len(CBT.dQp)
                 dQ=np.empty((len(Us),number_of_time_steps_with_data,nc))
                 dt=np.empty((len(Us),number_of_time_steps_with_data,nc))
-                for j in np.arange(len(CBT.dQps)):
-                    i1=CBT.dQps[j]
-                    i2=CBT.dtps[j]
+                for j in np.arange(len(CBT.dQp)):
+                    i1=CBT.dQp[j]
+                    i2=CBT.dtp[j]
                     dQ1=np.array(i1).reshape(number_of_time_steps_with_data,batchlengths[j],nc)
                     dt1=np.array(i2).reshape(number_of_time_steps_with_data,batchlengths[j],nc)
                     dQ1=np.array(dQ1).swapaxes(1,0)
@@ -491,26 +476,182 @@ class CBT_results:
                     dt[sum(batchlengths[0:j]):sum(batchlengths[0:j+1]),...]=dt1
                 self.dQ=dQ
                 self.dt=dt
-            
-                
-                
         elif CBT.parallelization=='non':
-            pass
-        self.CBTmain_instance=CBTmain_instance
-#test
-N=100
+                Us=CBT.U
+                number_of_time_steps_with_data=len(CBT.dQp[0])
+                dQ=np.empty((len(Us),number_of_time_steps_with_data,nc))
+                dt=np.empty((len(Us),number_of_time_steps_with_data,nc))
+                for j in np.arange(len(CBT.dQp)):
+                    i1=CBT.dQp[j]
+                    i2=CBT.dtp[j]
+                    dQ1=np.array(i1).reshape(number_of_time_steps_with_data,1,nc)
+                    dt1=np.array(i2).reshape(number_of_time_steps_with_data,1,nc)
+                    dQ1=np.array(dQ1).swapaxes(1,0)
+                    dt1=np.array(dt1).swapaxes(1,0)
+                    
+                    dQ[j:j+1,...]=dQ1
+                    dt[j:j+1,...]=dt1
+                self.dQ=dQ
+                self.dt=dt
+        self.currents=np.sum(np.array(self.dQ)[:,transient::,:],axis=1)/np.sum(np.array(self.dt)[:,transient::,:],axis=1)
+        self.currentsm=np.mean(self.currents,axis=1)
+        self.currentsstd=np.std(self.currents,axis=1)
+        self.points=int(len(self.currentsm)/2)
+        points=self.points
+        Us=CBT.U
+        
+        self.Gs=(self.currents[points:2*points,:]-self.currents[0:points,:])/np.array([(Us[points:2*points]-Us[0:points])]).repeat(len(self.currents[0,:]),axis=0).T
+        self.Gsm=np.sum(self.Gs,axis=1)/len(self.Gs[0,:])
+        self.Gstd=np.std(self.Gs,axis=1)
+        self.dV=Us[points:2*points]-Us[0:points]
+    def CBT_model_g(self,x):
+        return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
 
-Ec=4e-6
-Gt=2e-5
-gi=np.ones((2*N,))
-T=0.01
-FWHM=5.439*kB*T*N
-q0=0
-# points=21
-points=11
-lim=3*FWHM
-dV=FWHM/50
-Vs=np.linspace(-lim,lim,points)
+    def CBT_model_G(self,V):
+        return self.raw_data.Gt*(1-self.raw_data.Ec*self.CBT_model_g(V/(self.raw_data.N*kB*self.raw_data.T))/(kB*self.raw_data.T))
+    def plotG(self,save=False):
 
-result=CBTmain(Vs,T,Ec,Gt,N,Nruns=4000,Ntransient=1000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='internal',
-              n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1)
+        points=self.points
+        fig,ax=plt.subplots(figsize=(9,6))
+        plt.title('MC for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e, steps between samples={}, \n steps/(run'.format(self.raw_data.N,self.raw_data.T*1e3,self.raw_data.Ec*1e6,self.raw_data.Gt*1e6,self.raw_data.q0,
+                                                                                                                                                            self.raw_data.Ninterval)+r'$\times$'+'datapoint)={}, runs/datapoint={}, transient interval={}'.format(self.raw_data.Nruns,self.raw_data.number_of_concurrent,self.raw_data.Ntransient))
+        
+        Us=self.raw_data.U
+        Vs=(Us[points:2*points]+Us[0:points])/2
+        for i in np.arange(len(self.Gs[0,:])):
+            plt.plot(Vs,self.Gs[:,i],'.',color=[(i+1)/len(self.Gs[0,:]),0,0])
+        ax.plot(np.linspace(min(Us),max(Us),1000),self.CBT_model_G(np.linspace(min(Us),max(Us),1000)),label='First order analytic result')
+        ax.set_xlabel('Bias voltage [V]')
+        ax.set_ylabel(r'Differential Conductance [Si], ($\Delta$ I/$\Delta$ V, $\Delta$ V={:.1e} eV)'.format(np.mean(self.dV[0])))
+        ax.legend()
+        plt.grid()
+        plt.tight_layout()
+        fig2,ax2=plt.subplots(figsize=(9,6))
+
+        plt.title('Results for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e'.format(self.raw_data.N,self.raw_data.T*1e3,self.raw_data.Ec*1e6,self.raw_data.Gt*1e6,self.raw_data.q0))
+        ax2.errorbar(Vs,self.Gsm,yerr=self.Gstd/np.sqrt(len(self.Gs[0,:])),fmt='.',label='Monte Carlo simulation results (mean)')
+        ax2.plot(np.linspace(min(Us),max(Us),1000),self.CBT_model_G(np.linspace(min(Us),max(Us),1000)),label='first order analytic result')
+        ax2.set_xlabel('bias voltage [V]')
+        ax2.set_ylabel(r'Differential Conductance [Si], ($\Delta$ I/$\Delta$ V, $\Delta$ V={:.1e} eV)'.format(np.mean(self.dV)))
+        ax2.legend()
+        plt.grid()
+        plt.tight_layout()
+        
+        if save==True:
+        
+            filepath=os.getcwd()
+            try:
+                fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance1.png')
+                fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance2.png')
+                print('saving figures in folder: '+filepath)
+            except Exception:
+                print('saving figures in folder: '+filepath)
+                os.mkdir(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time))
+                fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance1.png')
+                fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance2.png')
+    def plotI(self,save=False):
+        fig,ax=plt.subplots(figsize=(9,6))
+        plt.title('MC for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e, steps between samples={}, \n steps/(run'.format(self.raw_data.N,self.raw_data.T*1e3,self.raw_data.Ec*1e6,self.raw_data.Gt*1e6,self.raw_data.q0,
+                                                                                                                                                            self.raw_data.Ninterval)+r'$\times$'+'datapoint)={}, runs/datapoint={}, transient interval={}'.format(self.raw_data.Nruns,self.raw_data.number_of_concurrent,self.raw_data.Ntransient))
+        
+        Us=self.raw_data.U
+
+        for i in np.arange(len(self.currents[0,:])):
+            plt.plot(Us,self.currents[:,i],'.',color=[(i+1)/len(self.currents[0,:]),0,0])
+        # ax.plot(np.linspace(min(Us),max(Us),1000),self.CBT_model_G(np.linspace(min(Us),max(Us),1000)),label='First order analytic result')
+        ax.set_xlabel('Bias voltage [V]')
+        ax.set_ylabel('Current [A]')
+        plt.grid()
+        plt.tight_layout()
+        fig2,ax2=plt.subplots(figsize=(9,6))
+
+        plt.title('Results for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e'.format(self.raw_data.N,self.raw_data.T*1e3,self.raw_data.Ec*1e6,self.raw_data.Gt*1e6,self.raw_data.q0))
+        ax2.errorbar(Us,self.currentsm,yerr=self.currentsstd,fmt='.',label='Monte Carlo simulation results (mean)')
+        ax2.set_xlabel('bias voltage [V]')
+        ax2.set_ylabel('Current [A]')
+        ax2.legend()
+        plt.grid()
+        plt.tight_layout()
+        if save==True:
+        
+            filepath=os.getcwd()
+            try:
+                fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current1.png')
+                fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current2.png')
+                print('saving figures in folder: '+filepath)
+            except Exception:
+                print('saving figures in folder: '+filepath)
+                os.mkdir(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time))
+                fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current1.png')
+                fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current2.png')
+        # self.CBTmain_instance=CBTmain_instance
+
+def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='external',
+             n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1,q0=0,split_voltage=True,dV=None,
+             make_plots=False,save_plots=True,output='full'):
+    
+    outputs=['full','G_mean, G_std','I_mean, I_std','G','I']
+    if output not in outputs:
+        print('output parameter must be one of '+str(outputs))
+        raise Exception('wrong output parameter')
+    FWHM=5.439*kB*T*N
+    if dV is None:
+        dV=FWHM/50
+    if dV>FWHM/5:
+        print('WARNING: dV is VERY HIGH!!, the conductance will a large systematic error!')
+    if number_of_concurrent==1:
+        print('warning: if number_of_concurrent is 1, standard deviations cannot be calculated by the current method')
+    if split_voltage:
+        Vs=split_voltages(U,dV)
+    else:
+        print('warning: the conductance will be completely wrong if split_voltage is not true, unless V is specified such that every second value in ascending sense is ordered on the left/right side of the array')
+        Vs=V
+    raw_result=CBTmain(Vs,T,Ec,Gt,N,Nruns,Ntransient,number_of_concurrent,Ninterval,skip_transient,parallelization,
+                  n0,second_order_C,dtype,offset_C,dC,n_jobs,batchsize)
+    result=CBT_data_analysis(raw_result)
+    if dV>FWHM/5:
+        print('WARNING: dV is VERY HIGH!!, the conductance will a large systematic error!')
+    if make_plots:
+        result.plotG(save=save_plots)
+        result.plotI(save=save_plots)
+    if output=='full':
+        
+        return result
+    elif output=='G_mean':
+        return result.Gsm
+    elif output=='G_mean, G_std':
+        return result.Gsm,result.Gstd
+    elif output=='I_mean, I_std':
+        return result.currentsm,result.currentsstd
+    elif output=='G':
+        return result.G
+    elif output=='I':
+        return result.currents
+    
+if __name__=='__main__': #runs only if the file is being run explicitly
+    
+    ###################################################For testing########################################
+    
+    N=100 #Number of islands
+    Ec=4e-6 #Charging energy in units of eV
+    Gt=2e-5 #Large voltage asymptotic conductance (affects noly the scaling of the result)
+    T=0.01 #Temperature in Kelvin
+    FWHM=5.439*kB*T*N #Full width half max according to the first order model
+
+    points=11 #number of voltages to run the simulation for
+    lim=3*FWHM 
+    V=np.linspace(-lim,lim,points)
+    
+    
+    ####Run main simulation####
+    res=carlo_CBT(V,T,Ec,Gt,N=100,Nruns=6000,Ninterval=1000,Ntransient=10000,n_jobs=4,parallelization='external')
+    
+    
+    ####store main results###
+    mean_conductances=res.Gsm #mean conductance
+    std_conductance=res.Gstd #standard deviation of conductance
+    mean_currents=res.currentsm #mean currents
+    res.plotG(save=True)
+    res.plotI(save=True)
+    
+    
