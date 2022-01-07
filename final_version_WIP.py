@@ -32,7 +32,7 @@ def iterable(m):
     Parameters
     ----------
     m : any type
-        DESCRIPTION.
+        Object to be checked for iterability.
 
     Returns
     
@@ -54,13 +54,13 @@ def pick_event2(x):
 
     Parameters
     ----------
-    x : TYPE
-        DESCRIPTION.
+    x : 2d array of floats
+        dimension is probabilities for each transition of the particular charge array represented by the zeroth dimension
 
     Returns
     -------
-    index : TYPE
-        DESCRIPTION.
+    index : array of int
+        index of transition event for each charge array chosen according to the probabilities provided.
 
     """
     i=x.shape[0]
@@ -74,15 +74,15 @@ def split_voltages(V,dV):
 
     Parameters
     ----------
-    V : TYPE
-        DESCRIPTION.
-    dV : TYPE
-        DESCRIPTION.
+    V : 1d array of float
+        voltages corresponding to conductances.
+    dV : float
+        size of voltage differential used to compute conductance from currents.
 
     Returns
     -------
-    Us : TYPE
-        DESCRIPTION.
+    Us : 1d array of twice the length of V
+        If V is the desired voltages to find the corresponding conductances, the simulation will run for each value of Us to find the current.
 
     """
     Us=V-dV
@@ -99,51 +99,59 @@ class CBTmain: #just does the simulation, no further analysis
 
         Parameters
         ----------
-        U : TYPE
-            DESCRIPTION.
-        T : TYPE
-            DESCRIPTION.
-        Ec : TYPE
-            DESCRIPTION.
-        Gt : TYPE
-            DESCRIPTION.
-        N : TYPE
-            DESCRIPTION.
-        Nruns : TYPE
-            DESCRIPTION.
-        Ntransient : TYPE
-            DESCRIPTION.
-        number_of_concurrent : TYPE
-            DESCRIPTION.
-        Ninterval : TYPE
-            DESCRIPTION.
-        skip_transient : TYPE
-            DESCRIPTION.
-        parallelization : TYPE, optional
-            DESCRIPTION. The default is 'external'.
-        n0 : TYPE, optional
-            DESCRIPTION. The default is None.
-        second_order_C : TYPE, optional
-            DESCRIPTION. The default is None.
-        dtype : TYPE, optional
-            DESCRIPTION. The default is 'float64'.
-        offset_C : TYPE, optional
-            DESCRIPTION. The default is None.
-        dC : TYPE, optional
-            DESCRIPTION. The default is 0.
-        n_jobs : TYPE, optional
-            DESCRIPTION. The default is 2.
-        batchsize : TYPE, optional
-            DESCRIPTION. The default is 1.
-        q0 : TYPE, optional
-            DESCRIPTION. The default is 0.
+        U : 1d array of float, or float
+            Voltages.
+        T : float
+            temperature in Kelvin.
+        Ec : float
+            charging energy.
+        Gt : float
+            tunneling conductance.
+        N : int
+            number of islands.
+        Nruns : int
+            total number of steps to be taken by each concurrent simulation (after transient steps are taken).
+        Ntransient : int
+            number of transient steps.
+        number_of_concurrent : int
+            number of data points to generate for each voltage (to save time charge configurations are "launched" from the same initial state reached after the transient regime; however, the initial state will be different for each voltage, since the probable steady state configurations will be different).
+        Ninterval : int
+            interval between datapoint storage of charge differentials and time differentials. 
+            decreasing Ninterval obviously increases simulation time (albeit very little), 
+            and decreasing is below the autocorrelation time doesnt decrease the variance of the final data 
+            (however, the covariance of the current/conductance data points are not increased by decreasing 
+             Ninterval since those are generated from seperate parallel runs).
+        skip_transient : bool
+            should be true. "skips" the data from the transient regime. Only reason to set it false would be to see how the current evolve in time from the highly improbable initial state.
+        parallelization : str, optional
+            "external": simulations for each voltage are run in parallel using the joblib library in batches of size given by the input batchsize. 
+            "internal": simulations for each voltage are run in parallel by fancy numpy vectorization, but uses a for-loop to iiterate over batches.
+            "non": for loop structure is used to iterate over voltages.
+            
+            The only reason not to use "external" is if the jobliib library somehow fails or interferes with other code.
+            
+            The default is 'external'.
+        n0 : 1D-array of float of size N-1, optional
+            initial charge configuration. The default is zeros.
+        second_order_C : array of float, optional
+            coupling between next to nearest neighbours. The default is zeros.
+        dtype : str, optional
+            datatype of the arrays used in calculations; using float32 should be faster, but it raises a lot of floatingpointerrors, so it shouldnt be touched I think. The default is 'float64'.
+        offset_C : 1D array of float, optional
+            capacitances representing coupling of dots to external charges. The units are e/Ec. The default is just zeros.
+        dC : float, or 1D array, optional
+            variations in capacitances in units of e/Ec. The default is 0.
+        n_jobs : int, optional
+            number of processes to run in parallel by the joblib module. The default is 2.
+        batchsize : int, optional
+            number of processes to run in parallel using 'internal' numpy vectorization. The default is 1.
+        q0 : int, optional
+            charge offset in units of e. The default is 0.
 
         Returns
         -------
-        TYPE
-            DESCRIPTION.
-        TYPE
-            DESCRIPTION.
+        CBT object
+            The raw result of the simulation to be inserted into a CBT_data_analysis instance to extranct currents and conductances.
 
         """
         if n0 is None:
@@ -305,8 +313,8 @@ class CBTmain: #just does the simulation, no further analysis
 
         Parameters
         ----------
-        number_of_concurrent : TYPE
-            DESCRIPTION.
+        number_of_concurrent : int
+            number of simulations to run in parallel for each voltage.
 
         Returns
         -------
@@ -340,13 +348,13 @@ class CBTmain: #just does the simulation, no further analysis
 
         Parameters
         ----------
-        nn : TYPE
-            DESCRIPTION.
+        nn : 2d-numpy array
+            first index is the charge on the ith island, second index is a seperate charge configuration that eveolves independently.
 
         Returns
         -------
-        E : TYPE
-            DESCRIPTION.
+        E : 1d array of size 2N times the nummber of charge configurations being run in parallel
+            energy differences corresponding to each possible transition of each charge array.
 
         """
         v=(nn.T@self.BB).flatten()
@@ -364,15 +372,16 @@ class CBTmain: #just does the simulation, no further analysis
 
         Parameters
         ----------
-        n1 : TYPE
-            DESCRIPTION.
-        update_gammas : TYPE, optional
-            DESCRIPTION. The default is True.
+        n1 : 2d-numpy array
+            first index is the charge on the ith island, second index is a seperate charge configuration that eveolves independently.
+
+        update_gammas : bool, optional
+            whether or not to update the attribute gammas. The default is True.
 
         Returns
         -------
-        Gamma : TYPE
-            DESCRIPTION.
+        Gamma : 1d array of size 2N times the nummber of charge configurations being run in parallel
+            transition rates corresponding to energy differences corresponding to each possible transition of each charge array.
 
         """
 
@@ -426,13 +435,14 @@ class CBTmain: #just does the simulation, no further analysis
 
         Parameters
         ----------
-        n : current charge configuration
-            DESCRIPTION.
+        n : 2d-numpy array
+            first index is the charge on the ith island, second index is a seperate charge configuration that eveolves independently.
+
 
         Returns
         -------
-        array of 2N transition probabilities where the first N represents a transition from Right to left and the second N represents transitions from left to right.
-            DESCRIPTION.
+        array of 2N times M transition probabilities where the first N represents a transition from Right to left and the second N represents transitions from left to right, and M represents the number of simulations being run in parallel ('internally').
+
 
         """
         try:
@@ -445,11 +455,28 @@ class CBTmain: #just does the simulation, no further analysis
 
         return self.p
 
-    def dt_f(self,n):
+    def dt_f(self):
+        """
+        
+
+        Returns
+        -------
+        1D Array of M floats representing the average time spent in each of the M present charge configurations.
+
+
+        """
 
         self.dts=self.factor_SI/self.Gamsum
         return self.dts
-    def dQ_f(self,n):
+    def dQ_f(self):
+        """
+        
+
+        Returns
+        -------
+        1D Array of M floats representing the average charge transfer in each of the M present charge configurations.
+
+        """
 
         self.dQ=-(e_SI/self.N)*self.Gamdif/self.Gamsum
         return self.dQ
@@ -457,11 +484,12 @@ class CBTmain: #just does the simulation, no further analysis
     def multistep(self,store_data=False):
         """
         
-
+        Take one monte carlo step for each parallel charge configuation.
+        
         Parameters
         ----------
-        store_data : TYPE, optional
-            DESCRIPTION. The default is False.
+        store_data : bool, optional
+            whether or not to store the time and charge data for the current charge configuration. The default is False.
 
         Returns
         -------
@@ -477,8 +505,8 @@ class CBTmain: #just does the simulation, no further analysis
             self.Gamdif=np.sum(self.gammas2[:,0:self.N]-self.gammas2[:,self.N::],axis=1)
             self.P(neff)
             if store_data:
-                self.dtp.append(self.dt_f(neff))
-                self.dQp.append(self.dQ_f(neff))
+                self.dtp.append(self.dt_f())
+                self.dQp.append(self.dQ_f())
 
             self.indices=pick_event2(self.p)#self.pick_event(neff,1)
             self.indices=list(self.indices)
@@ -500,20 +528,23 @@ class CBTmain: #just does the simulation, no further analysis
 
         Parameters
         ----------
-        number_of_steps : TYPE, optional
-            DESCRIPTION. The default is 1.
-        transient : TYPE, optional
-            DESCRIPTION. The default is 0.
-        print_every : TYPE, optional
-            DESCRIPTION. The default is None.
-        number_of_concurrent : TYPE, optional
-            DESCRIPTION. The default is None.
-        skip_transient : TYPE, optional
-            DESCRIPTION. The default is True.
+        number_of_steps : int, optional
+            Total number of montecarlo steps (excluding transient). The default is 1.
+        transient : int, optional
+            number of transient steps before data are stored. The default is 0.
+        print_every : int, optional
+            'print_every' as in print/save data for every x step. The default is every 1/100 of the total number of steps.
+        number_of_concurrent : int, optional
+            number of charge configurations to run in parallel. The default is None.
+        skip_transient : bool, optional
+            whether or not to skip data storing in the transient regime (i.e. if False, no data points are skipped and 
+            all charge configurations are launched from the charge confiiguration provided as input). The default is True.
 
         Returns
         -------
-        None.
+        runs the simulation. Dpening on the parallelization scheme, the main results in the form of charge 
+        transfer and trnsition times are either stored in the attribuute Is, or dQp and dtp together; 
+        this is handled automatically by inserting the resulting object into an instance of CBT_data_analysis.
 
         """
         if number_of_concurrent is None :
@@ -580,18 +611,24 @@ class CBTmain: #just does the simulation, no further analysis
 class CBT_data_analysis:
     def __init__(self,CBTmain_instance,transient=None):
         """
+        This class processes the raw data. The main results are the attributes 
+        Gsm: the mean conductance for each voltage
+        Gstd: the standard deviation of the conductance at each voltage
+        Gs: The conductance data points
+        
         
 
         Parameters
         ----------
-        CBTmain_instance : TYPE
-            DESCRIPTION.
-        transient : TYPE, optional
-            DESCRIPTION. The default is None.
+        CBTmain_instance : instance of CBTmain class
+            this contains the on processed data.
+        transient : int, optional
+            provides the opption of skipping some data in the beginning if the transient regime is short or skip_transient is not true in the CBTmain instance. The default is 0.
 
         Returns
         -------
         None.
+        
 
         """
         CBT=CBTmain_instance #shorthandname
@@ -815,9 +852,23 @@ class CBT_data_analysis:
                 fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current1.png')
                 fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current2.png')
         # self.CBTmain_instance=CBTmain_instance
-    def savedata(self,filname=None):
-        if filname is None:
+    def savedata(self,filename=None):
+        """
+        
+
+        Parameters
+        ----------
+        filename : TYPE, optional
+            DESCRIPTION. The default is None.
+
+        Returns
+        -------
+        None.
+
+        """
+        if filename is None:
             folder=os.getcwd()+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)
+            print('saving data in folder: '+str(folder))
             np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),dQ=self.dQ,
                                 dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
                                 N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
@@ -825,8 +876,8 @@ class CBT_data_analysis:
                                 now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
                                 number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U)
         else:
-
-            np.savez_compressed(filname,dQ=self.dQ,
+            print('saving data in: '+str(filename))
+            np.savez_compressed(filename,dQ=self.dQ,
                                 dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
                                 N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
                                 Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
