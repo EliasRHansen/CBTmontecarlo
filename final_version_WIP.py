@@ -49,21 +49,103 @@ def iterable(m):
 
 @njit
 def pick_event2(x):
+    """
+    
+
+    Parameters
+    ----------
+    x : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    index : TYPE
+        DESCRIPTION.
+
+    """
     i=x.shape[0]
     index=np.zeros((i),dtype='int32')
     for P in np.arange(i):
         index[P]=np.searchsorted(np.cumsum(x[P]), np.random.random(), side="right")
     return index
 def split_voltages(V,dV):
+    """
+    
+
+    Parameters
+    ----------
+    V : TYPE
+        DESCRIPTION.
+    dV : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    Us : TYPE
+        DESCRIPTION.
+
+    """
     Us=V-dV
     Us=np.concatenate((Us,V+dV))
     return Us
 
 class CBTmain: #just does the simulation, no further analysis
+
     
     def __init__(self,U,T,Ec,Gt,N,Nruns,Ntransient,number_of_concurrent,Ninterval,skip_transient,parallelization='external',
                  n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1,q0=0):
+        """
+        
 
+        Parameters
+        ----------
+        U : TYPE
+            DESCRIPTION.
+        T : TYPE
+            DESCRIPTION.
+        Ec : TYPE
+            DESCRIPTION.
+        Gt : TYPE
+            DESCRIPTION.
+        N : TYPE
+            DESCRIPTION.
+        Nruns : TYPE
+            DESCRIPTION.
+        Ntransient : TYPE
+            DESCRIPTION.
+        number_of_concurrent : TYPE
+            DESCRIPTION.
+        Ninterval : TYPE
+            DESCRIPTION.
+        skip_transient : TYPE
+            DESCRIPTION.
+        parallelization : TYPE, optional
+            DESCRIPTION. The default is 'external'.
+        n0 : TYPE, optional
+            DESCRIPTION. The default is None.
+        second_order_C : TYPE, optional
+            DESCRIPTION. The default is None.
+        dtype : TYPE, optional
+            DESCRIPTION. The default is 'float64'.
+        offset_C : TYPE, optional
+            DESCRIPTION. The default is None.
+        dC : TYPE, optional
+            DESCRIPTION. The default is 0.
+        n_jobs : TYPE, optional
+            DESCRIPTION. The default is 2.
+        batchsize : TYPE, optional
+            DESCRIPTION. The default is 1.
+        q0 : TYPE, optional
+            DESCRIPTION. The default is 0.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+        TYPE
+            DESCRIPTION.
+
+        """
         if n0 is None:
             n0=np.array([0]*(N-1))+q0
         else:
@@ -127,7 +209,9 @@ class CBTmain: #just does the simulation, no further analysis
         transient=int(Nruns/Ninterval)
         self.now=str(datetime.now()).replace(':','.')
         print('running '+str(number_of_concurrent)+'simulations initiated after a transient period of'+str(Ntransient)+'steps. This is done for '+str(self.number_of_Us)+' voltages, that are run in "internal" batches of size '+str(batchsize)+'.')
-        print('The total number of simulations (that gives rise to a datapoint for current) is: '+str(number_of_concurrent*self.number_of_Us))
+        total=number_of_concurrent*self.number_of_Us
+        
+        print('The total number of simulations (that gives rise to a datapoint for current) is: '+str(total))
         a=time()
         if (self.parallelization=='internal'):
             if batchsize>1:
@@ -183,7 +267,7 @@ class CBTmain: #just does the simulation, no further analysis
                     voltbatch.append(voltages[j*batchsize:batchsize*(j+1)])
                     if len(voltbatch[-1])<batchsize:
                         print('number of Us is not divisible into batches of size '+str(batchsize)+'. This is handled by having the last batch size being: '+str(len(voltbatch[-1])))
-                print('the total number of tasks is ' +str(voltbatch))
+                print('the total number of tasks is ' +str(len(voltbatch)))
                 self.voltbatch=voltbatch
             
             def f_scalar(V):
@@ -201,7 +285,7 @@ class CBTmain: #just does the simulation, no further analysis
                 self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
                 return self.dQp,self.dtp
             if batchsize==1:
-                print('the total number of tasks is ' +str(voltages))
+                print('the total number of tasks is ' +str(len(voltages)))
                 self.Is=Parallel(n_jobs=n_jobs,verbose=50)(delayed(f_scalar)(U) for U in voltages)
             else:
                 self.Is=Parallel(n_jobs=n_jobs,verbose=50)(delayed(f_vector)(U) for U in voltbatch)
@@ -216,6 +300,19 @@ class CBTmain: #just does the simulation, no further analysis
         print('simulation time: '+str(self.simulation_time))
 
     def update_number_of_concurrent(self,number_of_concurrent):
+        """
+        
+
+        Parameters
+        ----------
+        number_of_concurrent : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
         self.number_of_concurrent=number_of_concurrent
         self.MMM_withoutU=np.tile(self.MM,(1,number_of_concurrent))
         self.MMM=np.tile(self.MM,(1,number_of_concurrent*self.number_of_Us))
@@ -238,6 +335,20 @@ class CBTmain: #just does the simulation, no further analysis
         #     print(str(self.parallelization)+' is not implemented as a value for the parameter parallelization')
             
     def dE_f(self,nn):
+        """
+        
+
+        Parameters
+        ----------
+        nn : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        E : TYPE
+            DESCRIPTION.
+
+        """
         v=(nn.T@self.BB).flatten()
         # print(v.dtype)
         E=v+self.dE0#units of Ec
@@ -248,6 +359,22 @@ class CBTmain: #just does the simulation, no further analysis
 
         return E
     def update_transition_rate(self,n1,update_gammas=True):
+        """
+        
+
+        Parameters
+        ----------
+        n1 : TYPE
+            DESCRIPTION.
+        update_gammas : TYPE, optional
+            DESCRIPTION. The default is True.
+
+        Returns
+        -------
+        Gamma : TYPE
+            DESCRIPTION.
+
+        """
 
         limit1=1e-12
         limit2=1e12
@@ -328,33 +455,67 @@ class CBTmain: #just does the simulation, no further analysis
         return self.dQ
             
     def multistep(self,store_data=False):
+        """
+        
 
-            try:
-                neff=self.ns
+        Parameters
+        ----------
+        store_data : TYPE, optional
+            DESCRIPTION. The default is False.
 
-                self.gammas2=self.update_transition_rate(neff).reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
-                self.Gamsum=np.sum(self.gammas2,axis=1)
-                self.Gamdif=np.sum(self.gammas2[:,0:self.N]-self.gammas2[:,self.N::],axis=1)
-                self.P(neff)
-                if store_data:
-                    self.dtp.append(self.dt_f(neff))
-                    self.dQp.append(self.dQ_f(neff))
+        Returns
+        -------
+        None.
 
-                self.indices=pick_event2(self.p)#self.pick_event(neff,1)
-                self.indices=list(self.indices)
-                n_new=neff+self.MM[:,self.indices]
-                self.ns=n_new
-                
-            except FloatingPointError:
-                print('FloatingPointError Occurred; trying to redo step. This may occur when the sum of the transition rates is very small. In this case, the sums are: '+str(self.Gamsum)+". However, I think the bug causing this is gone now.")
-                print(np.sum(self.p,axis=1))
-                self.indices=pick_event2(self.p)#self.pick_event(neff,1)
-                self.indices=list(self.indices)
-                n_new=neff+self.MM[:,self.indices]#[:,:,0]
-                self.ns=n_new
-                self.multistep()
+        """
+
+        try:
+            neff=self.ns
+
+            self.gammas2=self.update_transition_rate(neff).reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
+            self.Gamsum=np.sum(self.gammas2,axis=1)
+            self.Gamdif=np.sum(self.gammas2[:,0:self.N]-self.gammas2[:,self.N::],axis=1)
+            self.P(neff)
+            if store_data:
+                self.dtp.append(self.dt_f(neff))
+                self.dQp.append(self.dQ_f(neff))
+
+            self.indices=pick_event2(self.p)#self.pick_event(neff,1)
+            self.indices=list(self.indices)
+            n_new=neff+self.MM[:,self.indices]
+            self.ns=n_new
+            
+        except FloatingPointError:
+            print('FloatingPointError Occurred; trying to redo step. This may occur when the sum of the transition rates is very small. In this case, the sums are: '+str(self.Gamsum)+". However, I think the bug causing this is gone now.")
+            print(np.sum(self.p,axis=1))
+            self.indices=pick_event2(self.p)#self.pick_event(neff,1)
+            self.indices=list(self.indices)
+            n_new=neff+self.MM[:,self.indices]#[:,:,0]
+            self.ns=n_new
+            self.multistep()
     
     def __call__(self,number_of_steps=1,transient=0,print_every=None,number_of_concurrent=None,skip_transient=True):
+        """
+        
+
+        Parameters
+        ----------
+        number_of_steps : TYPE, optional
+            DESCRIPTION. The default is 1.
+        transient : TYPE, optional
+            DESCRIPTION. The default is 0.
+        print_every : TYPE, optional
+            DESCRIPTION. The default is None.
+        number_of_concurrent : TYPE, optional
+            DESCRIPTION. The default is None.
+        skip_transient : TYPE, optional
+            DESCRIPTION. The default is True.
+
+        Returns
+        -------
+        None.
+
+        """
         if number_of_concurrent is None :
             number_of_concurrent=copy(self.number_of_concurrent)
         try:
@@ -418,6 +579,21 @@ class CBTmain: #just does the simulation, no further analysis
 
 class CBT_data_analysis:
     def __init__(self,CBTmain_instance,transient=None):
+        """
+        
+
+        Parameters
+        ----------
+        CBTmain_instance : TYPE
+            DESCRIPTION.
+        transient : TYPE, optional
+            DESCRIPTION. The default is None.
+
+        Returns
+        -------
+        None.
+
+        """
         CBT=CBTmain_instance #shorthandname
         self.raw_data=CBT
         self.now=CBT.now
@@ -506,12 +682,52 @@ class CBT_data_analysis:
         self.Gstd=np.std(self.Gs,axis=1)
         self.dV=Us[points:2*points]-Us[0:points]
     def CBT_model_g(self,x):
+        """
+        
+
+        Parameters
+        ----------
+        x : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
         return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
 
     def CBT_model_G(self,V):
+        """
+        
+
+        Parameters
+        ----------
+        V : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
         return self.raw_data.Gt*(1-self.raw_data.Ec*self.CBT_model_g(V/(self.raw_data.N*kB*self.raw_data.T))/(kB*self.raw_data.T))
     def plotG(self,save=False):
+        """
+        
 
+        Parameters
+        ----------
+        save : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        None.
+
+        """
         points=self.points
         fig,ax=plt.subplots(figsize=(9,6))
         plt.title('MC for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e, steps between samples={}, \n steps/(run'.format(self.raw_data.N,self.raw_data.T*1e3,self.raw_data.Ec*1e6,self.raw_data.Gt*1e6,self.raw_data.q0,
@@ -551,6 +767,19 @@ class CBT_data_analysis:
                 fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance1.png')
                 fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance2.png')
     def plotI(self,save=False):
+        """
+        
+
+        Parameters
+        ----------
+        save : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        None.
+
+        """
         fig,ax=plt.subplots(figsize=(9,6))
         plt.title('MC for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e, steps between samples={}, \n steps/(run'.format(self.raw_data.N,self.raw_data.T*1e3,self.raw_data.Ec*1e6,self.raw_data.Gt*1e6,self.raw_data.q0,
                                                                                                                                                             self.raw_data.Ninterval)+r'$\times$'+'datapoint)={}, runs/datapoint={}, transient interval={}'.format(self.raw_data.Nruns,self.raw_data.number_of_concurrent,self.raw_data.Ntransient))
@@ -586,10 +815,92 @@ class CBT_data_analysis:
                 fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current1.png')
                 fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current2.png')
         # self.CBTmain_instance=CBTmain_instance
+    def savedata(self,filname=None):
+        if filname is None:
+            folder=os.getcwd()+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)
+            np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),dQ=self.dQ,
+                                dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
+                                N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
+                                Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
+                                now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
+                                number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U)
+        else:
 
+            np.savez_compressed(filname,dQ=self.dQ,
+                                dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
+                                N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
+                                Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
+                                now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
+                                number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U)
+    
 def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='external',
              n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1,q0=0,split_voltage=True,dV=None,
              make_plots=False,save_plots=True,output='full'):
+    """
+    
+
+    Parameters
+    ----------
+    U : TYPE
+        DESCRIPTION.
+    T : TYPE
+        DESCRIPTION.
+    Ec : TYPE
+        DESCRIPTION.
+    Gt : TYPE
+        DESCRIPTION.
+    N : TYPE, optional
+        DESCRIPTION. The default is 100.
+    Nruns : TYPE, optional
+        DESCRIPTION. The default is 5000.
+    Ntransient : TYPE, optional
+        DESCRIPTION. The default is 5000.
+    number_of_concurrent : TYPE, optional
+        DESCRIPTION. The default is 5.
+    Ninterval : TYPE, optional
+        DESCRIPTION. The default is 1000.
+    skip_transient : TYPE, optional
+        DESCRIPTION. The default is True.
+    parallelization : TYPE, optional
+        DESCRIPTION. The default is 'external'.
+    n0 : TYPE, optional
+        DESCRIPTION. The default is None.
+    second_order_C : TYPE, optional
+        DESCRIPTION. The default is None.
+    dtype : TYPE, optional
+        DESCRIPTION. The default is 'float64'.
+    offset_C : TYPE, optional
+        DESCRIPTION. The default is None.
+    dC : TYPE, optional
+        DESCRIPTION. The default is 0.
+    n_jobs : TYPE, optional
+        DESCRIPTION. The default is 2.
+    batchsize : TYPE, optional
+        DESCRIPTION. The default is 1.
+    q0 : TYPE, optional
+        DESCRIPTION. The default is 0.
+    split_voltage : TYPE, optional
+        DESCRIPTION. The default is True.
+    dV : TYPE, optional
+        DESCRIPTION. The default is None.
+    make_plots : TYPE, optional
+        DESCRIPTION. The default is False.
+    save_plots : TYPE, optional
+        DESCRIPTION. The default is True.
+    output : TYPE, optional
+        DESCRIPTION. The default is 'full'.
+
+    Raises
+    ------
+    Exception
+        DESCRIPTION.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    """
     
     outputs=['full','G_mean, G_std','I_mean, I_std','G','I']
     if output not in outputs:
