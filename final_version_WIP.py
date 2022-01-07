@@ -126,7 +126,7 @@ class CBTmain: #just does the simulation, no further analysis
         self.MM=np.concatenate((self.M,-self.M),axis=1)
         transient=int(Nruns/Ninterval)
         self.now=str(datetime.now()).replace(':','.')
-        print('running '+str(number_of_concurrent)+'simulations initiated after a transient period of'+str(Ntransient)+'steps. This is done for '+str(self.number_of_Us)+' voltages, that are run in batches of size '+str(batchsize)+'.')
+        print('running '+str(number_of_concurrent)+'simulations initiated after a transient period of'+str(Ntransient)+'steps. This is done for '+str(self.number_of_Us)+' voltages, that are run in "internal" batches of size '+str(batchsize)+'.')
         print('The total number of simulations (that gives rise to a datapoint for current) is: '+str(number_of_concurrent*self.number_of_Us))
         a=time()
         if (self.parallelization=='internal'):
@@ -183,7 +183,7 @@ class CBTmain: #just does the simulation, no further analysis
                     voltbatch.append(voltages[j*batchsize:batchsize*(j+1)])
                     if len(voltbatch[-1])<batchsize:
                         print('number of Us is not divisible into batches of size '+str(batchsize)+'. This is handled by having the last batch size being: '+str(len(voltbatch[-1])))
-                print(voltbatch)
+                print('the total number of tasks is ' +str(voltbatch))
                 self.voltbatch=voltbatch
             
             def f_scalar(V):
@@ -201,6 +201,7 @@ class CBTmain: #just does the simulation, no further analysis
                 self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
                 return self.dQp,self.dtp
             if batchsize==1:
+                print('the total number of tasks is ' +str(voltages))
                 self.Is=Parallel(n_jobs=n_jobs,verbose=50)(delayed(f_scalar)(U) for U in voltages)
             else:
                 self.Is=Parallel(n_jobs=n_jobs,verbose=50)(delayed(f_vector)(U) for U in voltbatch)
@@ -606,8 +607,20 @@ def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,
     else:
         print('warning: the conductance will be completely wrong if split_voltage is not true, unless V is specified such that every second value in ascending sense is ordered on the left/right side of the array')
         Vs=V
-    raw_result=CBTmain(Vs,T,Ec,Gt,N,Nruns,Ntransient,number_of_concurrent,Ninterval,skip_transient,parallelization,
-                  n0,second_order_C,dtype,offset_C,dC,n_jobs,batchsize)
+    raw_result=CBTmain(Vs,T,Ec,Gt,N,Nruns=Nruns,
+                       Ntransient=Ntransient,
+                       number_of_concurrent=number_of_concurrent,
+                       Ninterval=Ninterval,
+                       skip_transient=skip_transient,
+                       parallelization=parallelization,
+                       n0=n0,
+                       second_order_C=second_order_C,
+                       dtype=dtype,
+                       offset_C=offset_C,
+                       dC=dC,
+                       n_jobs=n_jobs,
+                       batchsize=batchsize,
+                       q0=q0)
     result=CBT_data_analysis(raw_result)
     if dV>FWHM/5:
         print('WARNING: dV is VERY HIGH!!, the conductance will a large systematic error!')
@@ -644,10 +657,12 @@ if __name__=='__main__': #runs only if the file is being run explicitly
     
     
     ####Run main simulation####
+    print('runing example')
     res=carlo_CBT(V,T,Ec,Gt,N=100,Nruns=6000,Ninterval=1000,Ntransient=10000,n_jobs=4,parallelization='external')
-    
+    print('finished running example')
     
     ####store main results###
+    print('making plots')
     mean_conductances=res.Gsm #mean conductance
     std_conductance=res.Gstd #standard deviation of conductance
     mean_currents=res.currentsm #mean currents
