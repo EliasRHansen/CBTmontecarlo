@@ -635,6 +635,7 @@ class CBT_data_analysis:
         self.raw_data=CBT
         self.now=CBT.now
         self.simulation_time=CBT.simulation_time
+        self.filepath=os.getcwd()+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)
         if transient is None:
             if CBT.skip_transient:
                 transient=0
@@ -724,13 +725,13 @@ class CBT_data_analysis:
 
         Parameters
         ----------
-        x : TYPE
-            DESCRIPTION.
+        x : floats
+            unitsless variable.
 
         Returns
         -------
-        TYPE
-            DESCRIPTION.
+        function used in CBT model
+
 
         """
         return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
@@ -741,13 +742,13 @@ class CBT_data_analysis:
 
         Parameters
         ----------
-        V : TYPE
-            DESCRIPTION.
+        V : float
+            Voltage.
 
         Returns
         -------
-        TYPE
-            DESCRIPTION.
+        First order CBT conductance model. returns the conductance in units of 1/ohm
+
 
         """
         return self.raw_data.Gt*(1-self.raw_data.Ec*self.CBT_model_g(V/(self.raw_data.N*kB*self.raw_data.T))/(kB*self.raw_data.T))
@@ -757,8 +758,8 @@ class CBT_data_analysis:
 
         Parameters
         ----------
-        save : TYPE, optional
-            DESCRIPTION. The default is False.
+        save : bool, optional
+            If save is true a folder will be generated in which the plots are stored. The default is False.
 
         Returns
         -------
@@ -809,8 +810,8 @@ class CBT_data_analysis:
 
         Parameters
         ----------
-        save : TYPE, optional
-            DESCRIPTION. The default is False.
+        save : bool, optional
+            If true, a folder will be created in which the plots will be saved. The default is False.
 
         Returns
         -------
@@ -855,11 +856,13 @@ class CBT_data_analysis:
     def savedata(self,filename=None):
         """
         
-
+        stores all the input parameters and outputs of the simulation in a folder
+        which by default is the same as the folder in which the plots are stored.
+        
         Parameters
         ----------
-        filename : TYPE, optional
-            DESCRIPTION. The default is None.
+        filename : str, optional
+            folder/filename of the folder to store the data. The default is None.
 
         Returns
         -------
@@ -892,64 +895,101 @@ def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,
 
     Parameters
     ----------
-    U : TYPE
-        DESCRIPTION.
-    T : TYPE
-        DESCRIPTION.
-    Ec : TYPE
-        DESCRIPTION.
-    Gt : TYPE
-        DESCRIPTION.
-    N : TYPE, optional
-        DESCRIPTION. The default is 100.
-    Nruns : TYPE, optional
-        DESCRIPTION. The default is 5000.
-    Ntransient : TYPE, optional
-        DESCRIPTION. The default is 5000.
-    number_of_concurrent : TYPE, optional
-        DESCRIPTION. The default is 5.
-    Ninterval : TYPE, optional
-        DESCRIPTION. The default is 1000.
-    skip_transient : TYPE, optional
-        DESCRIPTION. The default is True.
-    parallelization : TYPE, optional
-        DESCRIPTION. The default is 'external'.
-    n0 : TYPE, optional
-        DESCRIPTION. The default is None.
-    second_order_C : TYPE, optional
-        DESCRIPTION. The default is None.
-    dtype : TYPE, optional
-        DESCRIPTION. The default is 'float64'.
-    offset_C : TYPE, optional
-        DESCRIPTION. The default is None.
-    dC : TYPE, optional
-        DESCRIPTION. The default is 0.
-    n_jobs : TYPE, optional
-        DESCRIPTION. The default is 2.
-    batchsize : TYPE, optional
-        DESCRIPTION. The default is 1.
-    q0 : TYPE, optional
-        DESCRIPTION. The default is 0.
-    split_voltage : TYPE, optional
-        DESCRIPTION. The default is True.
-    dV : TYPE, optional
-        DESCRIPTION. The default is None.
-    make_plots : TYPE, optional
-        DESCRIPTION. The default is False.
-    save_plots : TYPE, optional
-        DESCRIPTION. The default is True.
-    output : TYPE, optional
-        DESCRIPTION. The default is 'full'.
+    U : 1d array of floats
+        voltages at which to calculate teh conductance (not the current) using the monte carlo simulation. 
+        The simulation will actually be run for voltages shifted slightly relative to each value in order 
+        to calculate the conductance as the derivative of the current.
+        
+    T : float
+        temperature in Kelvin.
+        
+    Ec : float
+        charging energy in eV.
+        
+    Gt : float
+        tunneling conductance in units of 1/ohm. Note that this just scales the final result, 
+        so there is no need to run the simulation multible times if one wants to check the influence of this parameter.
+        
+    N : int, optional
+        number of islands in the CBT chain. The default is 100.
+        
+    Nruns : int, optional
+        number of monte carlo steps to be taken for each charge array. The default is 5000.
+        
+    Ntransient : int, optional
+        number of transient steps where no data is stored. This is just used to initialize the initial condition for each voltage. The default is 5000.
+        
+    number_of_concurrent : int, optional
+        This corresponds to how many datapoints will end up being generated for each voltage. 
+        For a given voltage, each datapoint is generated by evolving from the same initial charge condition 
+        which is found by evolving a single charge configuration through the transient regime. The default is 5.
+        
+    Ninterval : int, optional
+        Number monte carlo steps between storing data for charge transfer and time. 
+        Nothing bad happens if it is too low since in the end only the 
+        average is used to calculate the current, whose variance is calculated 
+        from parallel runs, so the autocorrelation doesnt matter. 
+        The only thing that can happen is that a lot of redundant correlated 
+        data is generated. The default is 1000.
+        
+    skip_transient : bool, optional
+        Whether or not to skip the data saving of the initial transient steps. This should just be true unless one is 
+        interested in the odd behaviour of the transient regime or something. The default is True.
+    parallelization : str, optional
+        "external": simulations for each voltage are run in parallel using the joblib library in batches of size given by the input batchsize. 
+        "internal": simulations for each voltage are run in parallel by fancy numpy vectorization, but uses a for-loop to iiterate over batches.
+        "non": for loop structure is used to iterate over voltages.
+        
+        The only reason not to use "external" is if the jobliib library somehow fails or interferes with other code.
+        
+        The default is 'external'.
+    n0 : 1D-array of float of size N-1, optional
+        initial charge configuration. The default is zeros.
+    second_order_C : array of float, optional
+        coupling between next to nearest neighbours. The default is zeros.
+    dtype : str, optional
+        datatype of the arrays used in calculations; using float32 should be faster, but it raises a lot of floatingpointerrors, 
+        so it shouldnt be touched I think. The default is 'float64'.
+    offset_C : 1D array of float, optional
+        capacitances representing coupling of dots to external charges. The units are e/Ec. The default is just zeros.
+    dC : float, or 1D array, optional
+        variations in capacitances in units of e/Ec. The default is 0.
+    n_jobs : int, optional
+        number of processes to run in parallel by the joblib module. The default is 2.
+    batchsize : int, optional
+        number of processes to run in parallel using 'internal' numpy vectorization. The default is 1.
+    q0 : int, optional
+        charge offset in units of e. The default is 0.
+        
+    split_voltage : bool, optional
+        If True the voltages, are split so that two closely spaced data points replaces one of the input points. 
+        This is done to calculate the local differential more precisely. The default is True.
+    dV : float, optional
+        differential voltage used in the calculation of the conductance from the current data. 
+        A low value increases the uncertainty of the conductance datapoints a lot, 
+        but a high value induces a systematic uncertainty. The default is 50 times smaller than the FWHM of the first order model.
+        
+    make_plots : bool, optional
+        If true, the conductance and current data is plotted in the end. The default is False.
+    save_plots : bool, optional
+        Whether or not to save the plots. The default is True.
+    output : str, optional
+        The final output. The default is 'full', which yelds a results object containing everything.
+        If not everything is needed, one may choose to just output the mean conductances, 
+        or smething else from the list: ['full','G_mean, G_std','I_mean, I_std','G','I']
 
     Raises
     ------
     Exception
-        DESCRIPTION.
+        If the specified output parameter is not understood, an exception is raised before running the simulation, 
+        so that the mistake can be corrected before starting the simulation in vain.
 
     Returns
     -------
-    TYPE
-        DESCRIPTION.
+    result object
+        if output is "full": a results object is generated whose main attrubutes 
+        of interest are Gsm yielding the mean conductances (one value for each input voltage) and 
+        Gstd yielding the standard deviations of the conductances (not the standard deviations of the means).
 
     """
     
@@ -968,7 +1008,7 @@ def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,
         Vs=split_voltages(U,dV)
     else:
         print('warning: the conductance will be completely wrong if split_voltage is not true, unless V is specified such that every second value in ascending sense is ordered on the left/right side of the array')
-        Vs=V
+        Vs=U
     raw_result=CBTmain(Vs,T,Ec,Gt,N,Nruns=Nruns,
                        Ntransient=Ntransient,
                        number_of_concurrent=number_of_concurrent,
@@ -983,52 +1023,57 @@ def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,
                        n_jobs=n_jobs,
                        batchsize=batchsize,
                        q0=q0)
-    result=CBT_data_analysis(raw_result)
-    if dV>FWHM/5:
-        print('WARNING: dV is VERY HIGH!!, the conductance will a large systematic error!')
-    if make_plots:
-        result.plotG(save=save_plots)
-        result.plotI(save=save_plots)
-    if output=='full':
-        
-        return result
-    elif output=='G_mean':
-        return result.Gsm
-    elif output=='G_mean, G_std':
-        return result.Gsm,result.Gstd
-    elif output=='I_mean, I_std':
-        return result.currentsm,result.currentsstd
-    elif output=='G':
-        return result.G
-    elif output=='I':
-        return result.currents
+    if split_voltage:
+        result=CBT_data_analysis(raw_result)
+
+        if dV>FWHM/5:
+            print('WARNING: dV is VERY HIGH!!, the conductance will a large systematic error!')
+        if make_plots:
+            result.plotG(save=save_plots)
+            result.plotI(save=save_plots)
+        if output=='full':
+            
+            return result
+        elif output=='G_mean':
+            return result.Gsm
+        elif output=='G_mean, G_std':
+            return result.Gsm,result.Gstd
+        elif output=='I_mean, I_std':
+            return result.currentsm,result.currentsstd
+        elif output=='G':
+            return result.G
+        elif output=='I':
+            return result.currents
+    else:
+        print('data analysis is not done since, the conductances cannot be calculated due to the option split_voltage is False. The raw_result will be used as output.')
+        return raw_result
     
 if __name__=='__main__': #runs only if the file is being run explicitly
-    
+    pass
     ###################################################For testing########################################
     
-    N=100 #Number of islands
-    Ec=4e-6 #Charging energy in units of eV
-    Gt=2e-5 #Large voltage asymptotic conductance (affects noly the scaling of the result)
-    T=0.01 #Temperature in Kelvin
-    FWHM=5.439*kB*T*N #Full width half max according to the first order model
+    # N=100 #Number of islands
+    # Ec=4e-6 #Charging energy in units of eV
+    # Gt=2e-5 #Large voltage asymptotic conductance (affects noly the scaling of the result)
+    # T=0.01 #Temperature in Kelvin
+    # FWHM=5.439*kB*T*N #Full width half max according to the first order model
 
-    points=11 #number of voltages to run the simulation for
-    lim=3*FWHM 
-    V=np.linspace(-lim,lim,points)
+    # points=11 #number of voltages to run the simulation for
+    # lim=3*FWHM 
+    # V=np.linspace(-lim,lim,points)
     
     
-    ####Run main simulation####
-    print('runing example')
-    res=carlo_CBT(V,T,Ec,Gt,N=100,Nruns=6000,Ninterval=1000,Ntransient=10000,n_jobs=4,parallelization='external')
-    print('finished running example')
+    # ####Run main simulation####
+    # print('runing example')
+    # res=carlo_CBT(V,T,Ec,Gt,N=100,Nruns=6000,Ninterval=1000,Ntransient=10000,n_jobs=4,parallelization='external')
+    # print('finished running example')
     
-    ####store main results###
-    print('making plots')
-    mean_conductances=res.Gsm #mean conductance
-    std_conductance=res.Gstd #standard deviation of conductance
-    mean_currents=res.currentsm #mean currents
-    res.plotG(save=True)
-    res.plotI(save=True)
+    # ####store main results###
+    # print('making plots')
+    # mean_conductances=res.Gsm #mean conductance
+    # std_conductance=res.Gstd #standard deviation of conductance
+    # mean_currents=res.currentsm #mean currents
+    # res.plotG(save=True)
+    # res.plotI(save=True)
     
     
