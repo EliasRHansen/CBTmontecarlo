@@ -6,7 +6,7 @@ Created on Fri Jan  7 02:52:19 2022
 """
 
 import numpy as np
-from final_version_WIP import carlo_CBT
+from electronsjumparound import carlo_CBT
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 kB=8.617*1e-5
