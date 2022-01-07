@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+Created on Wed Jan  5 10:47:45 2022
+
+@author: Elias Roos Hansen
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Created on Wed Dec 29 14:09:59 2021
 
 @author: Elias Roos Hansen
@@ -17,11 +24,30 @@ from derivative import dxdt
 import einops as eo
 import os
 from datetime import datetime
+from numba import njit
 np.seterr(all = 'raise')
 #########Inpu
 kB=8.617*1e-5
 
 e_SI=1.602*1e-19
+# @guvectorize(["int32[:,:](float64[:,:])"],
+#              "(m,n)->(m,n)")
+# @njit
+# def pick_event2(x):
+    
+#     i=x.shape[0]
+#     j=x.shape[1]
+#     index=np.zeros((i))
+#     for P in np.arange(i):
+#         index[P]=np.random.choice(j,p=x[P])
+#     return index
+@njit
+def pick_event2(x):
+    i=x.shape[0]
+    index=np.zeros((i),dtype='int32')
+    for P in np.arange(i):
+        index[P]=np.searchsorted(np.cumsum(x[P]), np.random.random(), side="right")
+    return index
 
 class CBTmontecarlo:
     
@@ -224,8 +250,8 @@ class CBTmontecarlo:
     def dE_f(self,nn):
         # v=self.A@nn 
         #np.einsum('ij,ik->kj',self.BB,nn).flatten()
-        #(nn@self.BB).flatten()
-        v=np.einsum('ij,ij->j',nn,self.B)
+        v=(nn.T@self.BB).flatten()
+        # v=np.einsum('ij,ij->j',nn,self.B)
         E=v+self.dE0#+ww.flatten() #units of Ec
         E[::2*self.N]=E[::2*self.N]+self.U/(2*self.Ec)
         E[self.N-1::2*self.N]=E[self.N-1::2*self.N]+self.U/(2*self.Ec)
@@ -346,8 +372,8 @@ class CBTmontecarlo:
 
     def update_transition_rate(self,n1,update_gammas=True):
 
-        limit1=1e-9
-        limit2=1e9
+        limit1=1e-12
+        limit2=1e12
         # a=time()
         # dE=-(self.energy(n2)-self.energy(n1,boundary_work=False)) #units of Ec
         # print(dE)
@@ -357,19 +383,30 @@ class CBTmontecarlo:
         dE=-self.dE_f(n1)
 
         if dE.ndim==1:
-            Gamma=np.zeros_like(dE)
+            c1=-dE*self.u>np.log(limit1)
+            c2=-dE*self.u<np.log(limit2)
+            c5=-dE*self.u<=np.log(limit1)
+            c6=-dE*self.u>=np.log(limit2)
+            dE1=dE[(c1) & (c2)]
             try:
-                Gamma[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]=dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]*self.u))
+                Gamma=np.array(self.gammas)#np.zeros_like(dE)
+            except AttributeError:
+                Gamma=np.zeros_like(dE)
+            try:
+                Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
             except FloatingPointError:
-                print('a floating point error occurred for dE[..]='+str(dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]))
-                Gamma[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]=dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]/(1-np.exp(-dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]*self.u))
-                Gamma[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]=dE[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]*self.u))
+                print('a floating point error occurred for dE[..]='+str(dE1))
+                c3=-dE*self.u<0
+                c4=-dE*self.u>0
+                Gamma[(c1) & (c3)]=dE[(c1) & (c3)]/(1-np.exp(-dE[(c1) & (c3)]*self.u))
+                Gamma[(c4) & (c2)]=dE[(c4) & (c2)]/(1-np.exp(-dE[(c4) & (c2)]*self.u))
                 Gamma[dE*self.u==0.]=1/(self.u)
-            Gamma[-dE*self.u<=np.log(limit1)]=dE[-dE*self.u<=np.log(limit1)]
+            Gamma[c5]=dE[c5]
             try:
-                Gamma[-dE*self.u>=np.log(limit2)]=-dE[-dE*self.u>=np.log(limit2)]*np.exp(dE[-dE*self.u>=np.log(limit2)]*self.u)
+                dE2=dE[c6]
+                Gamma[c6]=-dE2*np.exp(dE2*self.u)
             except FloatingPointError:
-                Gamma[-dE*self.u>=np.log(limit2)]=0
+                Gamma[c6]=0
             # print('updating transition rates')
             # Gamma=Gamma
             if update_gammas:
@@ -408,7 +445,7 @@ class CBTmontecarlo:
                 if self.number_of_concurrent==1:
                     p=self.gammas
                     try:
-                        self.p=p/sum(p)
+                        self.p=p/np.sum(p)
                     except FloatingPointError:
                         print('probability not normalized due to floting point error')
                     return self.p
@@ -426,8 +463,9 @@ class CBTmontecarlo:
             #         raise Exception('Exception occured')
         else:
             if self.number_of_concurrent==1:
-                p=self.update_transition_rate(self.Q(n),self.Q0(n))
-                self.p=p/sum(p)
+                # p=self.update_transition_rate(self.Q(n),self.Q0(n))
+                p=self.update_transition_rate(n,n)
+                self.p=p/np.sum(p)
                 return self.p
             else:
                 print('update has to be done manually when number of concurrent is greater than 1')
@@ -461,10 +499,12 @@ class CBTmontecarlo:
 
             for s in np.arange(self.number_of_concurrent):
                     
-                indices.append(random.choices(np.arange(2*self.N)+2*self.N*s,weights=self.p[s],k=k))
-
+                # indices.append(random.choices(np.arange(2*self.N)+2*self.N*s,weights=self.p[s],k=k))
+                indices.append(random.choices(np.arange(2*self.N),weights=self.p[s],k=k))
             return indices
     
+    
+        
     def dt_f(self,n):
         factor_SI=e_SI/(self.N*self.Ec*self.Gt)
         if self.number_of_concurrent==1:
@@ -570,12 +610,12 @@ class CBTmontecarlo:
     def step(self,store_data=False):
         neff=self.n#self.neff_f(self.n)
         # Qneff=self.Q(neff)
-        Q0neff=self.Q0(neff)
-        self.update_transition_rate(Q0neff)
+
+        self.update_transition_rate(neff)
         self.P(neff)
         self.index=self.pick_event(neff,1)
-        Q_new=Q0neff+self.MM#self.Q(self.n)
-        n_new=Q_new[:,self.index[0]]
+        # Q_new=Q0neff+self.MM#self.Q(self.n)
+        n_new=neff+self.MM[:,self.index[0]]#Q_new[:,self.index[0]]
         if store_data:
             self.dtp.append(self.dt_f(neff))
             self.dQp.append(self.dQ_f(neff))
@@ -600,8 +640,8 @@ class CBTmontecarlo:
             try:
                 neff=self.ns#self.neff_fnD(self.ns)
                 # self.QQ_nD(neff)
-                self.Q0Q_nD(neff)
-                self.gammas2=self.update_transition_rate(self.Q0Qn).reshape(self.number_of_concurrent,2*self.N)
+                # self.Q0Q_nD(neff)
+                self.gammas2=self.update_transition_rate(neff).reshape(self.number_of_concurrent,2*self.N)
                 self.Gamsum=np.sum(self.gammas2,axis=1)
                 self.Gamdif=np.sum(self.gammas2[:,0:self.N]-self.gammas2[:,self.N::],axis=1)
                 self.P(neff)
@@ -611,16 +651,18 @@ class CBTmontecarlo:
                     self.dQp.append(self.dQ_f(neff))
         
                     # self.Ip.append(np.sum(np.array(self.dQp))/np.sum(np.array(self.dtp)))
-                self.indices=self.pick_event(neff,1)
-                Q_new=self.Q0Qn+self.MMM#self.QQ_nD(self.ns,onlyQ=True)
-                n_new=Q_new[:,self.indices][:,:,0]
+                self.indices=pick_event2(self.p)#self.pick_event(neff,1)
+                self.indices=list(self.indices)
+                # print(self.indices)
+                # Q_new=self.Q0Qn+self.MMM#self.QQ_nD(self.ns,onlyQ=True)
+                n_new=neff+self.MM[:,self.indices]#[:,:,0]
                 self.ns=n_new
             except FloatingPointError:
                 print('FloatingPointError Occurred; trying to redo step. This may occur when the sum of the transition rates is very small. In this case, the sums are: '+str(self.Gamsum)+". However, I think the bug causing this is gone now.")
                 print(np.sum(self.p,axis=1))
-                self.indices=self.pick_event(neff,1)
-                Q_new=self.Q0Qn+self.MMM#self.QQ_nD(self.ns,onlyQ=True)
-                n_new=Q_new[:,self.indices][:,:,0]
+                self.indices=pick_event2(self.p)#self.pick_event(neff,1)
+                self.indices=list(self.indices)
+                n_new=neff+self.MM[:,self.indices]#[:,:,0]
                 self.ns=n_new
                 self.multistep()
 
@@ -935,16 +977,16 @@ if __name__=='__main__':
     FWHM=5.439*kB*T*N
     q0=0
     # points=21
-    points=51
+    points=11
     lim=3*FWHM
     dV=FWHM/50
     Vs=np.linspace(-lim,lim,points)
     # Vs=np.concatenate((Vs,np.linspace(-8*lim/(points),8*lim/(points),8)))
 
-    number_of_steps=6000
-    transient=40
-    print_every=1000
-    number_of_concurrent=500
+    number_of_steps=2000
+    transient=400
+    print_every=100
+    number_of_concurrent=15
     
     
     gg=conductance(N,T,Ec,Gt,n0=n0,skip_transient=True)
@@ -953,11 +995,11 @@ if __name__=='__main__':
     #                   store_interval=print_every,
     #                   number_of_concurrent=number_of_concurrent,
     #                   n_jobs=4)
-    Gsm,Gstd,Gs,Is=gg(Vs[0],number_of_steps=number_of_steps,
+    Gsm,Gstd,Gs,Is=gg(Vs,number_of_steps=number_of_steps,
                       transient=transient,
                       store_interval=print_every,
                       number_of_concurrent=number_of_concurrent,
-                      n_jobs=4,parallelize=False)
+                      n_jobs=2)
     
     # def plotG():
     #     plt.figure()

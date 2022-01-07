@@ -1,5 +1,19 @@
 # -*- coding: utf-8 -*-
 """
+Created on Thu Jan  6 12:15:35 2022
+
+@author: Elias Roos Hansen
+"""
+
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Jan  5 10:47:45 2022
+
+@author: Elias Roos Hansen
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Created on Wed Dec 29 14:09:59 2021
 
 @author: Elias Roos Hansen
@@ -17,15 +31,34 @@ from derivative import dxdt
 import einops as eo
 import os
 from datetime import datetime
+from numba import njit
 np.seterr(all = 'raise')
 #########Inpu
 kB=8.617*1e-5
 
 e_SI=1.602*1e-19
+# @guvectorize(["int32[:,:](float64[:,:])"],
+#              "(m,n)->(m,n)")
+# @njit
+# def pick_event2(x):
+    
+#     i=x.shape[0]
+#     j=x.shape[1]
+#     index=np.zeros((i))
+#     for P in np.arange(i):
+#         index[P]=np.random.choice(j,p=x[P])
+#     return index
+@njit #50 times performance increase
+def pick_event2(x):
+    i=x.shape[0]
+    index=np.zeros((i),dtype='int32')
+    for P in np.arange(i):
+        index[P]=np.searchsorted(np.cumsum(x[P]), np.random.random(), side="right")
+    return index
 
 class CBTmontecarlo:
     
-    def __init__(self,N,T,Ec,Gt,offset_C=None,second_order_C=None,n0=None,gi=None,U=0,dtype='float64',number_of_concurrent=1,dC=None):
+    def __init__(self,N,T,Ec,Gt,offset_C=None,second_order_C=None,n0=None,gi=None,U=np.array([0]),dtype='float64',number_of_concurrent=1,dC=None):
         if dC is None:
             dC=0
             self.dC=dC
@@ -52,15 +85,17 @@ class CBTmontecarlo:
             self.offset_C=offset_C
         else:
             self.offset_C=offset_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
-            
+        self.U=U #units of eV
+        self.number_of_Us=len(U)
+        
         self.Ec=Ec #units of eV
         self.N=N
         self.n0=n0.astype(dtype) #units of number of electrons
-        self.n=n0.astype(dtype)
+        self.n=n0.astype(dtype)#np.array([n0.astype(dtype)]*self.ofof_Us).T
+        
         self.Cs=np.ones((N,),dtype=dtype)+dC #units of e/Ec=160 [fmF]/Ec[microeV]
         
-        self.U=U #units of eV
-        
+
         # self.neff=self.neff_f(self.n0)
         self.kBT=kB*T #units of eV
         self.u=self.Ec/(self.kBT)
@@ -87,14 +122,14 @@ class CBTmontecarlo:
         offsets=np.array([-2,-1,0,1,2])
         self.C=sparse.dia_matrix((data,offsets),shape=(N-1,N-1),dtype=dtype)
         self.Cinv=inv(sparse.csc_matrix(self.C)).toarray()
-        potentials=self.Cinv@np.array([self.n],dtype=dtype).T
+        # potentials=self.Cinv@np.array([self.n],dtype=dtype).T
 
         # potentials=np.array(potentials,dtype='float64')
-        potentials=list(potentials.flatten())
+        # potentials=list(potentials.flatten())
 
-        potentials.append(self.U/(2*self.Ec))
-        potentials.append(-self.U/(2*self.Ec))
-        self.potentials=np.roll(np.array(potentials,dtype=dtype),1)
+        # potentials.append(self.U/(2*self.Ec))
+        # potentials.append(-self.U/(2*self.Ec))
+        # self.potentials=np.roll(np.array(potentials,dtype=dtype),1)
         dataM=np.array([[-1]*self.N,[1]*self.N])
         offsetsM=np.array([0,1])
         self.M=sparse.dia_matrix((dataM,offsetsM),shape=(self.N-1,self.N),dtype=dtype).toarray()
@@ -103,173 +138,35 @@ class CBTmontecarlo:
         self.update_number_of_concurrent(number_of_concurrent)
     def update_number_of_concurrent(self,number_of_concurrent):
         self.number_of_concurrent=number_of_concurrent
-        self.MMM=np.tile(self.MM,(1,number_of_concurrent))
-        self.A=self.MMM.T@self.Cinv
+        self.MMM=np.tile(self.MM,(1,number_of_concurrent*self.number_of_Us))
+        self.MMM_withoutU=np.tile(self.MM,(1,number_of_concurrent))
+        # self.A=self.MMM.T@self.Cinv
         self.B=self.Cinv@self.MMM
         self.BB=self.Cinv@self.MM
-
+        self.B_withoutU=self.Cinv@self.MMM_withoutU
+        
         C=np.einsum('ij,ij->j',self.MMM,self.B)/2
-        self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B[0,:]-self.Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:])
+        bound=np.kron(self.U/(self.Ec),(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:]))
+        self.boundary_works=self.U.repeat(number_of_concurrent)/(2*self.Ec)
+        self.dE0=C+bound
     
-    def neff_f(self,n):
-        """
-        
-
-        Parameters
-        ----------
-        n : charge array
-            DESCRIPTION.
-
-        Returns
-        -------
-        charge array adjusted for the fact that the potential at the boundaries are not otherwise included.
-            DESCRIPTION.
-
-        """
-        self.neff=copy(n)
-        self.neff[0]=self.neff[0]-self.Cs[0]*self.U/2
-        print(self.second_order_C)
-        self.neff[1]=self.neff[1]-self.second_order_C[1]*self.U/2
-        self.neff[-1]=self.neff[-1]+self.Cs[-1]*self.U/2
-        self.neff[-2]=self.neff[-2]+self.second_order_C[-1]*self.U/2
-        return self.neff
-    def neff_finv(self,neff):
-        """
-        
-
-        Parameters
-        ----------
-        n : charge array
-            DESCRIPTION.
-
-        Returns
-        -------
-        charge array adjusted for the fact that the potential at the boundaries are not otherwise included.
-            DESCRIPTION.
-
-        """
-        n=copy(neff)
-        n[0]=n[0]+self.Cs[0]*self.U/2
-        n[1]=n[1]+self.second_order_C[1]*self.U/2
-        n[-1]=n[-1]-self.Cs[-1]*self.U/2
-        n[-2]=n[-2]-self.second_order_C[-1]*self.U/2
-        return n
-    def neff_fnD(self,n):
-        """
-        
-
-        Parameters
-        ----------
-        n : charge array
-            DESCRIPTION.
-
-        Returns
-        -------
-        charge array adjusted for the fact that the potential at the boundaries are not otherwise included.
-            DESCRIPTION.
-
-        """
-        self.neffnD=copy(n)
-        self.neffnD[0,:]=self.neffnD[0,:]-self.Cs[0]*self.U/2
-        self.neffnD[1,:]=self.neffnD[1,:]-self.second_order_C[1]*self.U/2
-        self.neffnD[-1,:]=self.neffnD[-1,:]+self.Cs[-1]*self.U/2
-        self.neffnD[-2,:]=self.neffnD[-2,:]+self.second_order_C[-1]*self.U/2
-        return self.neffnD
-    def energy(self,n,boundary_work=True):
-        """
-        
-
-        Parameters
-        ----------
-        n : charge array, or matrix of 2N charge arrays as columns
-            DESCRIPTION.
-
-        Raises
-        ------
-        Exception
-            If the charge array doesnt have the right shape.
-
-        Returns
-        -------
-        Total energy in the system, or array of total energies if the input is a matrix with charge arrays as columns. The units are Ec.
-            DESCRIPTION.
-
-        """
-
-        if n.shape==(self.N-1,):
-            v=self.Cinv@np.array([n]).T
-            boundaries=(self.Cs[0]*v[0]+self.second_order_C[1]*v[1]-self.Cs[-1]*v[-1]-self.second_order_C[-1]*v[-2])*self.U/(self.Ec) #units of Ec
-            E=np.sum(n*(v.flatten()/2))+boundaries[0]
-            return E #units of Ec
-        elif n.ndim==2:
-            
-            v=self.Cinv@n
-            
-            # v=np.einsum('ij,jl->il',A,n)
-            w=np.einsum('ij,ij->j',n,v)     
-            # ww=n.T@np.array([self.offset_q]).T
-            boundaries=(self.Cs[0]*v[0,:]+self.second_order_C[1]*v[1,:]-self.Cs[-1]*v[-1,:]-self.second_order_C[-1]*v[-2,:])*self.U/(self.Ec) #units of Ec. Negative sign because the matrix elements have funny signs.
-            E=w.flatten()/2+boundaries#+ww.flatten() #units of Ec
-            if boundary_work:
-                E[::2*self.N]=E[::2*self.N]+self.U/(2*self.Ec)
-                E[self.N-1::2*self.N]=E[self.N-1::2*self.N]+self.U/(2*self.Ec)
-                E[self.N::2*self.N]=E[self.N::2*self.N]-self.U/(2*self.Ec)
-                E[2*self.N-1::2*self.N]=E[2*self.N-1::2*self.N]-self.U/(2*self.Ec)
-
-
-            return E #units of Ec
-        else:
-            raise Exception('energy could not be calculated due to incorrect shape of charge array')
 
     def dE_f(self,nn):
         # v=self.A@nn 
         #np.einsum('ij,ik->kj',self.BB,nn).flatten()
-        #(nn@self.BB).flatten()
-        v=np.einsum('ij,ij->j',nn,self.B)
+        v=(nn.T@self.BB).flatten()
+        # v=np.einsum('ij,ij->j',nn,self.B)
         E=v+self.dE0#+ww.flatten() #units of Ec
-        E[::2*self.N]=E[::2*self.N]+self.U/(2*self.Ec)
-        E[self.N-1::2*self.N]=E[self.N-1::2*self.N]+self.U/(2*self.Ec)
-        E[self.N::2*self.N]=E[self.N::2*self.N]-self.U/(2*self.Ec)
-        E[2*self.N-1::2*self.N]=E[2*self.N-1::2*self.N]-self.U/(2*self.Ec)
+        # E[::2*self.N]=E[::2*self.N]+self.U/(2*self.Ec)
+        # E[self.N-1::2*self.N]=E[self.N-1::2*self.N]+self.U/(2*self.Ec)
+        # E[self.N::2*self.N]=E[self.N::2*self.N]-self.U/(2*self.Ec)
+        # E[2*self.N-1::2*self.N]=E[2*self.N-1::2*self.N]-self.U/(2*self.Ec)
+        E[::2*self.N]=E[::2*self.N]+self.boundary_works
+        E[self.N-1::2*self.N]=E[self.N-1::2*self.N]+self.boundary_works
+        E[self.N::2*self.N]=E[self.N::2*self.N]-self.boundary_works
+        E[2*self.N-1::2*self.N]=E[2*self.N-1::2*self.N]-self.boundary_works
         return E
-    # def energy(self,n):
-    #     """
-        
 
-    #     Parameters
-    #     ----------
-    #     n : charge array, or matrix of 2N charge arrays as columns
-    #         DESCRIPTION.
-
-    #     Raises
-    #     ------
-    #     Exception
-    #         If the charge array doesnt have the right shape.
-
-    #     Returns
-    #     -------
-    #     Total energy in the system, or array of total energies if the input is a matrix with charge arrays as columns. The units are Ec.
-    #         DESCRIPTION.
-
-    #     """
-    #     if n.shape==(self.N-1,):
-    #         v=self.Cinv@np.array([n]).T
-
-    #         Dphi=np.diff(v.flatten())
-            
-    #         return np.sum(Cs[1:-1]*(Dphi)**2/2)+Cs[0]*(v[0]+U/(2*Ec))**2/2+Cs[-1]*(v[-1]-U/(2*Ec))**2/2 #units of Ec
-    #     elif n.shape==(self.N-1,2*self.N):
-    #         v=self.Cinv@n
-
-    #         Dphi=v-np.roll(v,1,axis=0)
-    #         Dphi=Dphi[1::,:]**2
-    #         Dphi0=(v[0,:]+U/(2*Ec))**2
-    #         Dphi1=(v[-1,:]-U/(2*Ec))**2
-    #         w=np.einsum('i,ij->j',Cs[1:-1],Dphi)+ Cs[0]*Dphi0+Cs[-1]*Dphi1
-    #         #boundaries=(self.Cs[0]*v[0,:]+self.second_order_C[1]*v[1,:]-self.Cs[-1]*v[-1,:]-self.second_order_C[-1]*v[-2,:])*self.U/(2*self.Ec) #units of Ec
-    #         return w.flatten()/2 #units of Ec
-    #     else:
-    #         raise Exception('energy could not be calculated due to incorrect shape of charge array')
     def iterable(self,m):
         """
         
@@ -280,6 +177,7 @@ class CBTmontecarlo:
             DESCRIPTION.
 
         Returns
+        
         -------
         bool
             true if the object passed is iterable and false otherwise.
@@ -291,89 +189,46 @@ class CBTmontecarlo:
         except TypeError:
             return False
 
-    def Q(self,n,reverse=False):
-        """
-        
-
-        Parameters
-        ----------
-        n : charge array
-
-        Returns
-        -------
-        Matrix with charge arrays as columns resulting from all possible transitions away from the provided charge configuration n
-            
-            DESCRIPTION.
-
-        """
-        if n.ndim==1:
-            # Qr=np.array([n],dtype=self.dtype).T.repeat(self.N,axis=1)+self.M
-            # Ql=np.array([n],dtype=self.dtype).T.repeat(self.N,axis=1)-self.M
-            Q=np.array([n],dtype=self.dtype).T.repeat(2*self.N,axis=-1)+self.MM
-            if reverse==False:
-                self.Q_new=Q
-            else:
-                self.Q_new=Q
-            return self.Q_new
-        elif n.ndim==2:
-
-            Q=np.array([n],dtype=self.dtype).repeat(2*self.N,axis=-1).reshape(N-1,2*N*self.number_of_concurrent)+self.MMM
-            
-            return Q
-    def Q0(self,n):
-        """
-        
-
-        Parameters
-        ----------
-        n : charge array
-            DESCRIPTION.
-
-        Returns
-        -------
-        Matrix with copies of current charge array as columns
-        
-            DESCRIPTION.
-
-        """
-        if n.ndim==1:
-            Qr=np.array([n],dtype=self.dtype).T.repeat(self.N,axis=1)
-            self.Q_old=np.concatenate((Qr,Qr),axis=1)
-            return np.concatenate((Qr,Qr),axis=1)
-        elif n.ndim==2:
-            Q=np.array([n],dtype=self.dtype).repeat(2*self.N,axis=-1).reshape(N-1,2*N*self.number_of_concurrent)
-            return Q
 
     def update_transition_rate(self,n1,update_gammas=True):
 
-        limit1=1e-9
-        limit2=1e9
-        # a=time()
-        # dE=-(self.energy(n2)-self.energy(n1,boundary_work=False)) #units of Ec
-        # print(dE)
-        # b=time()
-        # print(b-a)
-        # a=time()
+        limit1=1e-12
+        limit2=1e12
+
         dE=-self.dE_f(n1)
 
         if dE.ndim==1:
-            Gamma=np.zeros_like(dE)
+            c1=-dE*self.u>np.log(limit1)
+            c2=-dE*self.u<np.log(limit2)
+            c5=-dE*self.u<=np.log(limit1)
+            c6=-dE*self.u>=np.log(limit2)
+            dE1=dE[(c1) & (c2)]
             try:
-                Gamma[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]=dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]*self.u))
+                Gamma=np.array(self.gammas)#np.zeros_like(dE)
+            except AttributeError:
+                Gamma=np.zeros_like(dE)
+            try:
+                Gamma[(c1) & (c2)]=dE1/(1-np.exp(-dE1*self.u))
             except FloatingPointError:
-                print('a floating point error occurred for dE[..]='+str(dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<np.log(limit2))]))
-                Gamma[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]=dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]/(1-np.exp(-dE[(-dE*self.u>np.log(limit1)) & (-dE*self.u<0)]*self.u))
-                Gamma[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]=dE[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]/(1-np.exp(-dE[(-dE*self.u>0) & (-dE*self.u<np.log(limit2))]*self.u))
+                print('a floating point error occurred for dE[..]='+str(dE1))
+                c3=-dE*self.u<0
+                c4=-dE*self.u>0
+                dE3=dE[(c1) & (c3)]
+                dE4=dE[(c4) & (c2)]
+                Gamma[(c1) & (c3)]=dE3/(1-np.exp(-dE3*self.u))
+                Gamma[(c4) & (c2)]=dE4/(1-np.exp(-dE4*self.u))
                 Gamma[dE*self.u==0.]=1/(self.u)
-            Gamma[-dE*self.u<=np.log(limit1)]=dE[-dE*self.u<=np.log(limit1)]
+            Gamma[c5]=dE[c5]
             try:
-                Gamma[-dE*self.u>=np.log(limit2)]=-dE[-dE*self.u>=np.log(limit2)]*np.exp(dE[-dE*self.u>=np.log(limit2)]*self.u)
+                dE2=dE[c6]
+                Gamma[c6]=-dE2*np.exp(dE2*self.u)
             except FloatingPointError:
-                Gamma[-dE*self.u>=np.log(limit2)]=0
+                Gamma[c6]=0
             # print('updating transition rates')
             # Gamma=Gamma
             if update_gammas:
                 self.gammas=Gamma
+                self.sumgammas=sum(self.gammas)
             return Gamma.astype(self.dtype)
         
         elif self.iterable(dE)==False:
@@ -386,7 +241,8 @@ class CBTmontecarlo:
                 Gamma=-dE*np.exp(dE*self.u)
             # Gamma=Gamma
             return Gamma
-
+        else:
+            print('something is wrong with the dimensions of energy difference')
     
     def P(self,n,update=False):
         """
@@ -403,12 +259,22 @@ class CBTmontecarlo:
             DESCRIPTION.
 
         """
+        try:
+            
+            p=self.gammas
+        except Exception:
+            p=self.update_transition_rate(n)
+        try:
+            Norm=self.sumgammas
+        except Exception:
+            Norm=np.sum(p)
+            
         if update==False:
             # try:
-                if self.number_of_concurrent==1:
-                    p=self.gammas
+                if self.number_of_concurrent*self.number_of_Us==1:
+                        
                     try:
-                        self.p=p/sum(p)
+                        self.p=p/Norm
                     except FloatingPointError:
                         print('probability not normalized due to floting point error')
                     return self.p
@@ -426,8 +292,8 @@ class CBTmontecarlo:
             #         raise Exception('Exception occured')
         else:
             if self.number_of_concurrent==1:
-                p=self.update_transition_rate(self.Q(n),self.Q0(n))
-                self.p=p/sum(p)
+                # p=self.update_transition_rate(self.Q(n),self.Q0(n))
+                self.p=p/Norm
                 return self.p
             else:
                 print('update has to be done manually when number of concurrent is greater than 1')
@@ -453,31 +319,36 @@ class CBTmontecarlo:
 
         """
         if self.number_of_concurrent==1:
-            index=random.choices(np.arange(2*self.N),weights=self.p,k=k)
             
-            return index
+            index=pick_event2(np.array([self.p]))
+            
+            # index=random.choices(np.arange(2*self.N),weights=self.p,k=k)
+            
+            return index[0]
         else:
             indices=[]
 
             for s in np.arange(self.number_of_concurrent):
                     
-                indices.append(random.choices(np.arange(2*self.N)+2*self.N*s,weights=self.p[s],k=k))
-
+                # indices.append(random.choices(np.arange(2*self.N)+2*self.N*s,weights=self.p[s],k=k))
+                indices.append(random.choices(np.arange(2*self.N),weights=self.p[s],k=k))
             return indices
     
+    
+        
     def dt_f(self,n):
         factor_SI=e_SI/(self.N*self.Ec*self.Gt)
         if self.number_of_concurrent==1:
             try:
                 # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
-                self.dts=factor_SI/sum(self.gammas)
+                self.dts=factor_SI/self.sumgammas
                 return self.dts
                 # return sum(self.dts)
             except Exception:
-                self.update_transition_rate(self.Q(n),self.Q0(n))
+                self.update_transition_rate(n)
                 # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
                 return self.dts
-                self.dts=factor_SI/sum(self.gammas)
+                self.dts=factor_SI/self.sumgammas
                 # return sum(self.dts)
         else:
                 self.dts=factor_SI/self.Gamsum
@@ -489,61 +360,18 @@ class CBTmontecarlo:
     def dQ_f(self,n):
         if self.number_of_concurrent==1:
             try:
-                self.dQ=-(e_SI/self.N)*sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas)
+                self.dQ=-(e_SI/self.N)*sum(self.gammas[0:self.N]-self.gammas[self.N::])/self.sumgammas
                 return self.dQ
             except Exception:
                 self.update_transition_rate(self.Q(n),self.Q0(n))
-                self.dQ=-(e_SI/self.N)*sum(self.gammas[0:self.N]-self.gammas[self.N::])/sum(self.gammas)
+                self.dQ=-(e_SI/self.N)*sum(self.gammas[0:self.N]-self.gammas[self.N::])/self.sumgammas
                 return self.dQ
         else:
                 self.dQ=-(e_SI/self.N)*self.Gamdif/self.Gamsum
                 return self.dQ
-    def Q0Q_nD(self,nn,update=True):
 
-        QQn_new=nn[...,None].repeat(2*self.N,axis=2)
-        
-        QQn_new=eo.rearrange(QQn_new,'i j k -> i (j k)')
-        # QQn_new=nn.repeat(2*self.N,axis=1)
-        if update:
-            self.Q0Qn=QQn_new
-        return QQn_new
-    def QQ_nD(self,nn,update=True,onlyQ=False):
-
-        QQn_new=nn[...,None].repeat(2*self.N,axis=2)
-        # self.QQn_new=np.array([self.Q(n) for n in nn.T])
-        # self.QQn_new=eo.rearrange(self.QQn_new,'i j k -> j (i k)')
-        QQn_new=eo.rearrange(QQn_new,'i j k -> i (j k)')
-        if onlyQ is False:
-            # self.Q0Qn_new=np.array([self.Q0(n) for n in nn.T])
-            # self.Q0Qn_new=eo.rearrange(self.Q0Qn_new,'i j k -> j (i k)')
-            Q0Qn_new=np.array(QQn_new)
-            
-        QQn_new+=self.MMM
-        if update:
-            self.QQn=QQn_new
-            if onlyQ is False:
-                self.Q0Qn=Q0Qn_new
-        if onlyQ is False:
-            return QQn_new,Q0Qn_new
-        else:
-            return QQn_new
-    def dt_and_dQ_2_f(self,Qn,number_of_concurrent=1):
-        factor_SI=e_SI/(self.N*self.Ec*self.Gt)
-        # self.dts=factor_SI/(self.gammas[0:self.N]+self.gammas[self.N::])
-        QQn=np.array([self.Q(n) for n in Qn.T])
-        QQn=eo.rearrange(QQn,'i j k -> j (i k)')
-        Q0Qn=np.array([self.Q0(n) for n in Qn.T])
-        Q0Qn=eo.rearrange(Q0Qn,'i j k -> j (i k)')
-        Gam=self.update_transition_rate(QQn,Q0Qn,update_gammas=False).reshape(2*self.N,2*self.N)
-        Gamsum=np.sum(Gam,axis=1)
-        dt2=factor_SI/Gamsum
-        dt2=np.sum(dt2*self.p)
-        
-        dQ2=-(e_SI/self.N)*np.sum(Gam[:,0:self.N]-Gam[:,self.N::],axis=1)/Gamsum
-        dQ2=np.sum(dQ2*self.p)
-        return dt2,dQ2
     def ntot_f(self):
-        self.ntot.append(sum(self.n))
+        self.ntot.append(np.sum(self.n,axis=0))
     def store_n(self):
         self.n_history.append(self.n)
     def plot_event_histograms(self,n,samples=None):
@@ -567,15 +395,17 @@ class CBTmontecarlo:
     def update_potentials(self):
         v=self.Cinv@np.array([self.n]).T
         self.potentials[1:-1]=v.flatten()
+        
+        
     def step(self,store_data=False):
         neff=self.n#self.neff_f(self.n)
         # Qneff=self.Q(neff)
-        Q0neff=self.Q0(neff)
-        self.update_transition_rate(Q0neff)
+
+        self.update_transition_rate(neff)
         self.P(neff)
         self.index=self.pick_event(neff,1)
-        Q_new=Q0neff+self.MM#self.Q(self.n)
-        n_new=Q_new[:,self.index[0]]
+        # Q_new=Q0neff+self.MM#self.Q(self.n)
+        n_new=neff+self.MM[:,self.index[0]]#Q_new[:,self.index[0]]
         if store_data:
             self.dtp.append(self.dt_f(neff))
             self.dQp.append(self.dQ_f(neff))
@@ -595,13 +425,14 @@ class CBTmontecarlo:
                 self.ns[j+1]=self.n0+np.array(random.choices(np.arange(11)-5,k=N-1,weights=np.exp(-0.2*(np.arange(11)-5)**2)))
         self.ns=self.ns.T
         return self.ns
+
     def multistep(self,store_data=False):
         # with np.errstate(divide='raise'):
             try:
                 neff=self.ns#self.neff_fnD(self.ns)
                 # self.QQ_nD(neff)
-                self.Q0Q_nD(neff)
-                self.gammas2=self.update_transition_rate(self.Q0Qn).reshape(self.number_of_concurrent,2*self.N)
+                # self.Q0Q_nD(neff)
+                self.gammas2=self.update_transition_rate(neff).reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
                 self.Gamsum=np.sum(self.gammas2,axis=1)
                 self.Gamdif=np.sum(self.gammas2[:,0:self.N]-self.gammas2[:,self.N::],axis=1)
                 self.P(neff)
@@ -611,16 +442,18 @@ class CBTmontecarlo:
                     self.dQp.append(self.dQ_f(neff))
         
                     # self.Ip.append(np.sum(np.array(self.dQp))/np.sum(np.array(self.dtp)))
-                self.indices=self.pick_event(neff,1)
-                Q_new=self.Q0Qn+self.MMM#self.QQ_nD(self.ns,onlyQ=True)
-                n_new=Q_new[:,self.indices][:,:,0]
+                self.indices=pick_event2(self.p)#self.pick_event(neff,1)
+                self.indices=list(self.indices)
+                # print(self.indices)
+                # Q_new=self.Q0Qn+self.MMM#self.QQ_nD(self.ns,onlyQ=True)
+                n_new=neff+self.MM[:,self.indices]#[:,:,0]
                 self.ns=n_new
             except FloatingPointError:
                 print('FloatingPointError Occurred; trying to redo step. This may occur when the sum of the transition rates is very small. In this case, the sums are: '+str(self.Gamsum)+". However, I think the bug causing this is gone now.")
                 print(np.sum(self.p,axis=1))
-                self.indices=self.pick_event(neff,1)
-                Q_new=self.Q0Qn+self.MMM#self.QQ_nD(self.ns,onlyQ=True)
-                n_new=Q_new[:,self.indices][:,:,0]
+                self.indices=pick_event2(self.p)#self.pick_event(neff,1)
+                self.indices=list(self.indices)
+                n_new=neff+self.MM[:,self.indices]#[:,:,0]
                 self.ns=n_new
                 self.multistep()
 
@@ -654,7 +487,7 @@ class CBTmontecarlo:
             self.number_of_concurrent=number_of_concurrent
             if print_every is None:
                 print_every=int(number_of_steps/100+1)
-            # fig2,ax2=plt.subplots()
+            
             for i in np.arange(number_of_steps):
                 if print_every != 0:
                     if i%print_every==print_every-1:
@@ -673,22 +506,23 @@ class CBTmontecarlo:
                 print('n0 is being moved forward through the transient window')
 
                 self.update_number_of_concurrent(1)
+                
+                self.ns=np.array([self.n0]*self.number_of_Us).T
                 for j in np.arange(transient*print_every):
-                    self.step(store_data=False)
+                    self.multistep(store_data=False)
                     
-                self.n0=np.array(self.n)
+                # self.n0=np.array(self.n)
+                
                 del self.gammas
                 del self.p
 
             self.update_number_of_concurrent(number_of_concurrent)
-            # self.MMM=np.tile(self.MM,(1,self.number_of_concurrent))
-            # self.A=self.MMM.T@self.Cinv
-            # self.B=self.Cinv@self.MMM
-            # C=np.einsum('ij,ij->j',self.MMM,self.B)/2
-            # self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B[0,:]-self.Cs[-1]*self.B[-1,:]+self.second_order_C[1]*self.B[1,:]-self.second_order_C[-1]*self.B[-2,:])
+
             print('initiating multistep')
-            self.initiate_multistep(randomize_initial=False)
+            
+            # self.initiate_multistep(randomize_initial=False)
             print(self.ns)
+            self.ns=self.ns.repeat(self.number_of_concurrent,axis=1)
             if print_every is None:
                 print_every=int(number_of_steps/100+1)
             for i in np.arange(number_of_steps):
@@ -706,7 +540,9 @@ class CBTmontecarlo:
                 self.final_currents=np.sum(np.array(self.dQp),axis=0)/np.sum(np.array(self.dtp),axis=0)
             else:
                 self.final_currents=np.sum(np.array(self.dQp)[transient::,:],axis=0)/np.sum(np.array(self.dtp)[transient::,:],axis=0)
+                
             return self.final_currents
+        
 
 class conductance:
     
@@ -783,7 +619,33 @@ class conductance:
         #sigI=np.sqrt(np.var(dQ,axis=0)/np.sum(dt,axis=0)**2+(np.sum(dQ,axis=0)/np.sum(dt,axis=0))**2*np.var(dt,axis=0)/np.sum(dt,axis=0)**2)*np.sqrt(number_of_steps/print_every-transient)
 
         return current,dQ,dt
-    
+    def f2(self,U):
+        N=self.N
+        T=self.T
+        Ec=self.Ec
+        Gt=self.Gt
+        offset_C=self.offset_C
+        second_order_C=self.second_order_C
+        n0=self.n0
+        gi=self.gi
+        dtype=self.dtype
+        number_of_concurrent=self.number_of_concurrent
+        dC=self.dC
+        
+        
+        self.CBT=CBTmontecarlo(N,T,Ec,Gt,offset_C,second_order_C,n0,gi,U,dtype,number_of_concurrent,dC)
+        
+
+        current=self.CBT(self.number_of_steps,self.transient,print_every=self.store_interval,number_of_concurrent=number_of_concurrent,skip_transient=self.skip_transient)
+        if number_of_concurrent>1:
+            dQ=np.array(self.CBT.dQp)[transient::,:]
+            dt=np.array(self.CBT.dtp)[transient::,:]
+        else:
+            dQ=np.array(self.CBT.dQp)[transient::]
+            dt=np.array(self.CBT.dtp)[transient::]
+        #sigI=np.sqrt(np.var(dQ,axis=0)/np.sum(dt,axis=0)**2+(np.sum(dQ,axis=0)/np.sum(dt,axis=0))**2*np.var(dt,axis=0)/np.sum(dt,axis=0)**2)*np.sqrt(number_of_steps/print_every-transient)
+
+        return current,dQ,dt   
     def run(self,Us,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,n_jobs=4,parallelize=True):
         if number_of_concurrent is None:
             number_of_concurrent=self.number_of_concurrent
@@ -820,6 +682,42 @@ class conductance:
         self.Gs=(self.currents[points:2*points,:]-self.currents[0:points,:])/np.array([(Us[points:2*points]-Us[0:points])]).repeat(len(self.currents[0,:]),axis=0).T
         self.Gsm=np.sum(self.Gs,axis=1)/len(self.Gs[0,:])
         self.Gstd=np.std(self.Gs,axis=1)
+        return self.Gsm,self.Gstd,self.Gs,Is
+    def run2(self,Us,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,parallelize=True):
+        if number_of_concurrent is None:
+            number_of_concurrent=self.number_of_concurrent
+        else:
+            self.number_of_concurrent=number_of_concurrent
+        if T is None:
+            T=self.T
+        else:
+            self.T=T 
+        self.number_of_steps=number_of_steps
+        self.store_interval=store_interval
+        self.transient=transient
+        self.Us=Us
+        self.now=str(datetime.now()).replace(':','.')
+        a=time()
+
+        current,dQ,dt=self.f(Us)
+
+        b=time()
+        self.simulation_time=b-a
+        # self.Is=Is
+        self.currents=np.array([current[self.number_of_concurrent*s:self.number_of_concurrent*(s+1)] for s in np.arange(len(Us))])
+        self.dQ=np.array([dQ[:,self.number_of_concurrent*s:self.number_of_concurrent*(s+1)] for s in np.arange(len(Us))])
+        self.dt=np.array([dt[:,self.number_of_concurrent*s:self.number_of_concurrent*(s+1)] for s in np.arange(len(Us))])
+        if number_of_concurrent>1:
+            self.currentsm=np.mean(self.currents,axis=1)
+        else:
+            self.currentsm=np.mean(self.currents)
+        self.points=int(len(self.currentsm)/2)
+        points=self.points
+        self.Gs=(self.currents[points:2*points,:]-self.currents[0:points,:])/np.array([(Us[points:2*points]-Us[0:points])]).repeat(len(self.currents[0,:]),axis=0).T
+        self.Gsm=np.sum(self.Gs,axis=1)/len(self.Gs[0,:])
+        self.Gstd=np.std(self.Gs,axis=1)
+        Is=None
+        self.Is=Is
         return self.Gsm,self.Gstd,self.Gs,Is
     def auto(self,x,step):
         xm=np.mean(x)
@@ -872,7 +770,7 @@ class conductance:
                 fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance1.png')
                 fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance2.png')
         
-    def __call__(self,V,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,n_jobs=4,dV=None,split=True,plot=True,save_data=True,parallelize=True):
+    def __call__(self,V,number_of_steps,store_interval,transient,T=None,number_of_concurrent=None,n_jobs=4,dV=None,split=True,plot=True,save_data=True,parallelize=True,internal_parallelization=True):
         self.Vhalf=5.439*kB*self.T*self.N
         try:
             if split:
@@ -885,7 +783,10 @@ class conductance:
                 Us=np.concatenate((Us,V+self.dV))
             else:
                 Us=V
-            self.run(Us,number_of_steps,store_interval,transient,T,number_of_concurrent,n_jobs,parallelize)
+            if internal_parallelization:
+                self.run2(Us,number_of_steps,store_interval,transient,T,number_of_concurrent,parallelize)
+            else:
+                self.run(Us,number_of_steps,store_interval,transient,T,number_of_concurrent,n_jobs,parallelize)
             if plot:
                 self.plotG(save=True)
             return self.Gsm,self.Gstd,self.Gs,self.Is
@@ -935,29 +836,26 @@ if __name__=='__main__':
     FWHM=5.439*kB*T*N
     q0=0
     # points=21
-    points=51
+    points=53
     lim=3*FWHM
     dV=FWHM/50
     Vs=np.linspace(-lim,lim,points)
     # Vs=np.concatenate((Vs,np.linspace(-8*lim/(points),8*lim/(points),8)))
 
-    number_of_steps=6000
-    transient=40
+    number_of_steps=600000
+    transient=4
     print_every=1000
-    number_of_concurrent=500
+    number_of_concurrent=6
     
-    
+    # sim=CBTmontecarlo(N,T,Ec,Gt,U=Vs)
+    # sim(100,10,2,number_of_concurrent=3)
     gg=conductance(N,T,Ec,Gt,n0=n0,skip_transient=True)
-    # gg(Vs[0],number_of_steps=number_of_steps,
-    #                   transient=transient,
-    #                   store_interval=print_every,
-    #                   number_of_concurrent=number_of_concurrent,
-    #                   n_jobs=4)
-    Gsm,Gstd,Gs,Is=gg(Vs[0],number_of_steps=number_of_steps,
+
+    Gsm,Gstd,Gs,Is=gg(Vs,number_of_steps=number_of_steps,
                       transient=transient,
                       store_interval=print_every,
                       number_of_concurrent=number_of_concurrent,
-                      n_jobs=4,parallelize=False)
+                      n_jobs=2)
     
     # def plotG():
     #     plt.figure()
