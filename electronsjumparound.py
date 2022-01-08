@@ -104,7 +104,8 @@ class CBTmain: #just does the simulation, no further analysis
         T : float
             temperature in Kelvin.
         Ec : float
-            charging energy.
+            charging energy. Only the ratio of the charging energy to the the temperature matters for the actual shape. 
+            At fixed ratio, changing one the the parameters amounts to changing the horizotal scaling.
         Gt : float
             tunneling conductance.
         N : int
@@ -275,7 +276,7 @@ class CBTmain: #just does the simulation, no further analysis
                     voltbatch.append(voltages[j*batchsize:batchsize*(j+1)])
                     if len(voltbatch[-1])<batchsize:
                         print('number of Us is not divisible into batches of size '+str(batchsize)+'. This is handled by having the last batch size being: '+str(len(voltbatch[-1])))
-                print('the total number of tasks is ' +str(len(voltbatch)))
+                print('the total number of tasks that will run be run by the joblib module is ' +str(len(voltbatch)))
                 self.voltbatch=voltbatch
             
             def f_scalar(V):
@@ -542,7 +543,7 @@ class CBTmain: #just does the simulation, no further analysis
 
         Returns
         -------
-        runs the simulation. Dpening on the parallelization scheme, the main results in the form of charge 
+        runs the simulation. Depending on the parallelization scheme, the main results in the form of charge 
         transfer and trnsition times are either stored in the attribuute Is, or dQp and dtp together; 
         this is handled automatically by inserting the resulting object into an instance of CBT_data_analysis.
 
@@ -870,14 +871,24 @@ class CBT_data_analysis:
 
         """
         if filename is None:
-            folder=os.getcwd()+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)
-            print('saving data in folder: '+str(folder))
-            np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),dQ=self.dQ,
-                                dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
-                                N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
-                                Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
-                                now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
-                                number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U)
+            try:
+                folder=os.getcwd()+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)
+                print('saving data in folder: '+str(folder))
+                np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),dQ=self.dQ,
+                                    dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
+                                    N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
+                                    Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
+                                    now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
+                                    number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U)
+            except FileNotFoundError:
+                filepath=os.getcwd()
+                os.mkdir(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time))
+                np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),dQ=self.dQ,
+                                    dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
+                                    N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
+                                    Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
+                                    now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
+                                    number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U)
         else:
             print('saving data in: '+str(filename))
             np.savez_compressed(filename,dQ=self.dQ,
