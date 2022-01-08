@@ -290,7 +290,7 @@ for u in unitless_u:
 
         print(u)
 
-        lim=5.5*5.439*N
+        lim=5.3*5.439*N
         V=np.linspace(-lim,lim,points)
         number_of_concurrent=9
         q0=np.random.uniform(low=-0.5,high=0.5,size=(N-1,))
@@ -315,20 +315,21 @@ for u in unitless_u:
             number_of_tries+=1
             try:
                 
-                par,cov=curve_fit(f,V_data,G_data,p0=p_model)
+                par,cov=curve_fit(f,V_data,G_data,p0=p_model,sigma=V_data_std)
                 print(par)
                 G_MC=f(V_data,*par)
-                chi_model=chi(G_data,G_MC,wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent))
-                chi_0=chi(G_data,f0(V_data,*par0),np.mean(wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent)))
+                chi_model=chi(G_data,G_MC,wacky_sigma(V_data/par[0])*par[1]/np.sqrt(number_of_concurrent))
+                chi_0=chi(G_data,f0(V_data,*par0),np.mean(wacky_sigma(V_data/par[0])*par[1]/np.sqrt(number_of_concurrent)))
                 
-                fig=plt.figure(figsize=(9,6))
-                plt.plot(V_data,G_data,'.',label='experimental data')
+                fig=plt.figure(figsize=(10,6))
+                plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
                 plt.title('Best MC Fit parameters for u={:.2f}, q0="uniformly distributed": '.format(u)+' T={:.1e} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$')
                 # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
-                plt.errorbar(V*par[0]-par[2],mean_conductances*par[1],yerr=par[2]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
+                plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                 plt.plot(V_data,res.CBT_model_G((V_data-par[2])/par[0])*par[1],label='first order result for same parameters as the MC')
                 plt.plot(V_data,f0(V_data,*par0),label='first order result for optimal first order parameters: T={:.1e}mK'.format(1e3*par0[3]))
                 plt.legend()
+                plt.tight_layout()
                 try:
                     fig.savefig(res.filepath+'Chi_sq_plot.png')
                 except FileNotFoundError:
@@ -380,7 +381,7 @@ for u in unitless_u:
         #     pass
         ##########################################################################################
         print('running the same simulation for q0=0')
-        lim=5.5*5.439*N
+        lim=5.3*5.439*N
         V=np.linspace(-lim,lim,points)
         number_of_concurrent=9
         q0=0
@@ -405,14 +406,15 @@ for u in unitless_u:
             number_of_tries+=1
             try:
                 
-                par,cov=curve_fit(f,V_data,G_data,p0=p_model)
+                par,cov=curve_fit(f,V_data,G_data,p0=p_model,sigma=V_data_std)
                 print(par)
                 G_MC=f(V_data,*par)
                 chi_model=chi(G_data,G_MC,wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent))
                 chi_0=chi(G_data,f0(V_data,*par0),np.mean(wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent)))
                 
-                fig=plt.figure(figsize=(9,6))
-                plt.plot(V_data,G_data,'.',label='experimental data')
+                fig=plt.figure(figsize=(10,6))
+                plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
+
                 plt.title('Best MC Fit parameters for u={:.2f}, q0={:.2f}e: '.format(u,q0)+' T={:.1e} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$')
                 # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                 plt.errorbar(V*par[0]-par[2],mean_conductances*par[1],yerr=par[2]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
@@ -430,9 +432,9 @@ for u in unitless_u:
                 error_check=False
             except RuntimeError:
                 print('The least square optimizer did not converge for these parameters')
-                p_model[0]=p_model[0]+np.random.uniform(low=-1,high=1)*p_model[0]*1e-1
-                p_model[1]=p_model[1]+np.random.uniform(low=-1,high=1)*p_model[1]*1e-1
-                p_model[2]=p_model[2]+np.random.uniform(low=-1,high=1)*p_model[2]*1e-1
+                p_model[0]=p_model[0]+np.random.uniform(low=-0.5,high=0.5)*p_model[0]*1e-1
+                p_model[1]=p_model[1]+np.random.uniform(low=-0.5,high=0.5)*p_model[1]*1e-1
+                p_model[2]=p_model[2]+np.random.uniform(low=-0.5,high=0.5)*p_model[2]*1e-1
                 print('Trying again with new parameters: '+str(p_model))
             if number_of_tries>1:
                 print('number of tries:')
