@@ -920,7 +920,7 @@ class CBT_data_analysis:
     
 def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='external',
              n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1,q0=0,split_voltage=True,dV=None,
-             make_plots=False,save_plots=True,output='full'):
+             make_plots=False,save_plots=True,output='full',transient=1000):
     """
     
 
@@ -1008,7 +1008,8 @@ def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,
         The final output. The default is 'full', which yelds a results object containing everything.
         If not everything is needed, one may choose to just output the mean conductances, 
         or smething else from the list: ['full','G_mean, G_std','I_mean, I_std','G','I']
-
+    transient : int, optional
+        The number of additional steps to skip in the arrays of charge transfers and transition times in the current calculation apart from the ones already skipped during the simulation
     Raises
     ------
     Exception
@@ -1055,7 +1056,7 @@ def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,
                        batchsize=batchsize,
                        q0=q0)
     if split_voltage:
-        result=CBT_data_analysis(raw_result)
+        result=CBT_data_analysis(raw_result, transient=transient)
 
         if dV>FWHM/5:
             print('WARNING: dV is VERY HIGH!!, the conductance will a large systematic error!')
