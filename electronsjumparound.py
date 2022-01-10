@@ -333,12 +333,17 @@ class CBTmain: #just does the simulation, no further analysis
             
             self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])
             self.boundary_works=self.U/(2*self.Ec)
+            self.gi=np.tile(self.Cs,int(len(self.dE0)/self.N))
+            self.gi2=self.gi.reshape(self.number_of_concurrent,2*self.N)
         else:
 
             self.B=self.Cinv@self.MMM
             C=np.einsum('ij,ij->j',self.MMM,self.B)/2
             bound=np.kron(self.U/(self.Ec),(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:]))
             self.boundary_works=self.U.repeat(number_of_concurrent)/(2*self.Ec)
+            self.gi=np.tile(self.Cs,int(len(bound)/self.N))
+            self.gi2=self.gi.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
+            print('gi:'+str(self.gi))
             self.dE0=C+bound
         # else:
         #     print(str(self.parallelization)+' is not implemented as a value for the parameter parallelization')
@@ -422,11 +427,12 @@ class CBTmain: #just does the simulation, no further analysis
             except FloatingPointError:
                 Gamma[c6]=0
             # print('updating transition rates')
-            Gamma=Gamma
+
             if update_gammas:
-                self.gammas=Gamma
+                self.gammas=self.gi*Gamma
                 self.sumgammas=sum(self.gammas)
-            return Gamma
+            self.gammas3=Gamma.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
+            return self.gi*Gamma
 
         else:
             print('something is wrong with the dimensions of energy difference')
@@ -503,7 +509,8 @@ class CBTmain: #just does the simulation, no further analysis
 
             self.gammas2=self.update_transition_rate(neff).reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
             self.Gamsum=np.sum(self.gammas2,axis=1)
-            self.Gamdif=np.sum(self.gammas2[:,0:self.N]-self.gammas2[:,self.N::],axis=1)
+            
+            self.Gamdif=np.sum(self.gammas3[:,0:self.N]-self.gammas3[:,self.N::],axis=1)
             self.P(neff)
             if store_data:
                 self.dtp.append(self.dt_f())
@@ -899,7 +906,8 @@ class CBT_data_analysis:
                                     N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
                                     Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
                                     now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
-                                    number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U)
+                                    number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
+                                    currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C)
             except FileNotFoundError:
                 filepath=os.getcwd()
                 os.mkdir(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time))
@@ -908,7 +916,8 @@ class CBT_data_analysis:
                                     N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
                                     Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
                                     now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
-                                    number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U)
+                                    number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
+                                    currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C)
         else:
             print('saving data in: '+str(filename))
             np.savez_compressed(filename,dQ=self.dQ,
@@ -916,7 +925,8 @@ class CBT_data_analysis:
                                 N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
                                 Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
                                 now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
-                                number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U)
+                                number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd
+                                ,currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C)
     
 def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='external',
              n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1,q0=0,split_voltage=True,dV=None,
@@ -1079,7 +1089,9 @@ def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,
     else:
         print('data analysis is not done since, the conductances cannot be calculated due to the option split_voltage is False. The raw_result will be used as output.')
         return raw_result
-    
+
+def fit_carlo(dataV,dataG,u):
+    pass
 if __name__=='__main__': #runs only if the file is being run explicitly
     pass
     ###################################################For testing########################################

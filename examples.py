@@ -285,7 +285,7 @@ par0,cov0=curve_fit(f0,V_data,G_data,p0=p0)
 def chi(a,b,delta):
     return np.sum((a-b)**2/delta**2)
 # q0s=np.linspace(-0.2,0.2,3)
-unitless_u=np.linspace(1.7,3,12)
+unitless_u=np.linspace(1.96,2.6,12)
 chi_sq_uniform=[]
 chi_sq_0=[]
 for u in unitless_u:
@@ -294,10 +294,15 @@ for u in unitless_u:
 
         lim=5.2*5.439*N
         V=np.linspace(-lim,lim,points)
-        number_of_concurrent=10
-        q0=np.random.uniform(low=-0.5,high=0.5,size=(N-1,))
-        res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=6000,Ninterval=100,Ntransient=18000,n_jobs=2,number_of_concurrent=number_of_concurrent,
-                      parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=10)
+        number_of_concurrent=15
+        q0=0*np.random.uniform(low=-0.5,high=0.5,size=(N-1,))
+        Nruns=8000
+        Ninterval=10
+        Ntransient=50000
+        transient=200
+        offset_C=np.ones((N-1,))/50
+        res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                      parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C)
     
     
         ####store main results###
@@ -325,7 +330,7 @@ for u in unitless_u:
                 chi_sq_uniform.append(chi_model)
                 fig=plt.figure(figsize=(11,6))
                 plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
-                plt.title('Best MC Fit parameters for u={:.2f}, q0="uniformly distributed": '.format(u)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV'.format(1e6*par[0]))
+                plt.title('Best MC Fit parameters for u={:.2f}, q0="uniformly distributed": '.format(u)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}'.format(1e6*par[0],np.mean(offset_C)))
                 # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                 plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                 plt.ylabel('conductance [Si]')
@@ -381,11 +386,11 @@ for u in unitless_u:
         print('running the same simulation for q0=0')
         lim=5.2*5.439*N
         V=np.linspace(-lim,lim,points)
-        number_of_concurrent=10
+        # number_of_concurrent=10
         q0=0
-        res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=6000,Ninterval=100,Ntransient=18000,n_jobs=2,number_of_concurrent=number_of_concurrent,
-                      parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=10)
-    
+        offset_C=np.ones((N-1,))*0
+        res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                      parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C)
     
         ####store main results###
         mean_conductances=res.Gsm #mean conductance
@@ -413,7 +418,7 @@ for u in unitless_u:
                 fig=plt.figure(figsize=(11,6))
                 plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
 
-                plt.title('Best MC Fit parameters for u={:.2f}, q0={:.2f}e: '.format(u,q0)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV'.format(1e6*par[0]))
+                plt.title('Best MC Fit parameters for u={:.2f}, q0={:.2f}e: '.format(u,q0)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}'.format(1e6*par[0]),np.mean(offset_C))
                 # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                 plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[2]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                 plt.ylabel('conductance [Si]')
@@ -465,6 +470,8 @@ for u in unitless_u:
             res.plotG(save=True)
         except Exception:
             pass #not important
+        plt.pause(0.05)
+        plt.show()
         plt.close()
 #%%
 def ff(V_experiment,u):
