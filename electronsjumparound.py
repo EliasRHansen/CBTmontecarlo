@@ -18,7 +18,7 @@ import einops as eo
 import os
 from datetime import datetime
 from numba import njit
-
+from scipy.special import exprel
 
 np.seterr(all = 'raise')
 kB=8.617*1e-5
@@ -401,36 +401,38 @@ class CBTmain: #just does the simulation, no further analysis
             Gamma=np.zeros_like(dE)
             
         if dE.ndim==1:
-            # try:
-            #     Gamma=-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
-            # except FloatingPointError:
-            c1=-dE*self.u>np.log(limit1)
-            c2=-dE*self.u<np.log(limit2)
-            c5=-dE*self.u<=np.log(limit1)
-            c6=-dE*self.u>=np.log(limit2)
-            dE1=dE[(c1) & (c2)]
             try:
-                Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
+                #Gamma=-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
+                Gamma=1/exprel(-dE)#-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
             except FloatingPointError:
-                print('a floating point error occurred for dE[..]='+str(dE1))
-                c3=-dE*self.u<0
-                c4=-dE*self.u>0
-                dE3=dE[(c1) & (c3)]
-                dE4=dE[(c4) & (c2)]
-                Gamma[(c1) & (c3)]=dE3/(1-np.exp(-dE3*self.u))
-                Gamma[(c4) & (c2)]=dE4/(1-np.exp(-dE4*self.u))
-                Gamma[dE*self.u==0.]=1/(self.u)
-            Gamma[c5]=dE[c5]
-            try:
-                dE2=dE[c6]
-                Gamma[c6]=-dE2*np.exp(dE2*self.u)
-            except FloatingPointError:
-                Gamma[c6]=0
+                print('FFfloat!!')
+                c1=-dE*self.u>np.log(limit1)
+                c2=-dE*self.u<np.log(limit2)
+                c5=-dE*self.u<=np.log(limit1)
+                c6=-dE*self.u>=np.log(limit2)
+                dE1=dE[(c1) & (c2)]
+                try:
+                    Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
+                except FloatingPointError:
+                    print('a floating point error occurred for dE[..]='+str(dE1))
+                    c3=-dE*self.u<0
+                    c4=-dE*self.u>0
+                    dE3=dE[(c1) & (c3)]
+                    dE4=dE[(c4) & (c2)]
+                    Gamma[(c1) & (c3)]=dE3/(1-np.exp(-dE3*self.u))
+                    Gamma[(c4) & (c2)]=dE4/(1-np.exp(-dE4*self.u))
+                    Gamma[dE*self.u==0.]=1/(self.u)
+                Gamma[c5]=dE[c5]
+                try:
+                    dE2=dE[c6]
+                    Gamma[c6]=-dE2*np.exp(dE2*self.u)
+                except FloatingPointError:
+                    Gamma[c6]=0
             # print('updating transition rates')
 
             if update_gammas:
                 self.gammas=self.gi*Gamma
-                self.sumgammas=sum(self.gammas)
+                # self.sumgammas=np.sum(self.gammas)
             self.gammas3=Gamma.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
             return self.gi*Gamma
 
@@ -509,10 +511,9 @@ class CBTmain: #just does the simulation, no further analysis
 
             self.gammas2=self.update_transition_rate(neff).reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
             self.Gamsum=np.sum(self.gammas2,axis=1)
-            
-            self.Gamdif=np.sum(self.gammas3[:,0:self.N]-self.gammas3[:,self.N::],axis=1)
             self.P(neff)
             if store_data:
+                self.Gamdif=np.sum(self.gammas3[:,0:self.N]-self.gammas3[:,self.N::],axis=1)
                 self.dtp.append(self.dt_f())
                 self.dQp.append(self.dQ_f())
 
@@ -584,6 +585,8 @@ class CBTmain: #just does the simulation, no further analysis
             self.ns=np.array([self.n0]*self.number_of_Us).T
             print('initiating multistep for the transient window for '+str(self.number_of_concurrent)+' charge configurations to move through the transient regime')
             for j in np.arange(transient*print_every):
+                if j%print_every==print_every-1:
+                    print('transient {:.1f}'.format(j*100/(transient*print_every))+' pct.')
                 self.multistep(store_data=False)
                 
             # self.n0=np.array(self.n)
@@ -930,7 +933,7 @@ class CBT_data_analysis:
     
 def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='external',
              n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1,q0=0,split_voltage=True,dV=None,
-             make_plots=False,save_plots=True,output='full',transient=1000):
+             make_plots=False,save_plots=True,output='full',transient=10):
     """
     
 
@@ -1096,21 +1099,21 @@ if __name__=='__main__': #runs only if the file is being run explicitly
     pass
     ###################################################For testing########################################
     
-    # N=100 #Number of islands
-    # Ec=4e-6 #Charging energy in units of eV
-    # Gt=2e-5 #Large voltage asymptotic conductance (affects noly the scaling of the result)
-    # T=0.01 #Temperature in Kelvin
-    # FWHM=5.439*kB*T*N #Full width half max according to the first order model
+    N=100 #Number of islands
+    Ec=4e-6 #Charging energy in units of eV
+    Gt=2e-5 #Large voltage asymptotic conductance (affects noly the scaling of the result)
+    T=0.01 #Temperature in Kelvin
+    FWHM=5.439*kB*T*N #Full width half max according to the first order model
 
-    # points=11 #number of voltages to run the simulation for
-    # lim=3*FWHM 
-    # V=np.linspace(-lim,lim,points)
+    points=11 #number of voltages to run the simulation for
+    lim=3*FWHM 
+    V=np.linspace(-lim,lim,points)
     
     
-    # ####Run main simulation####
-    # print('runing example')
-    # res=carlo_CBT(V,T,Ec,Gt,N=100,Nruns=6000,Ninterval=1000,Ntransient=10000,n_jobs=4,parallelization='external')
-    # print('finished running example')
+    ####Run main simulation####
+    print('runing example')
+    res=carlo_CBT(V,T,Ec,Gt,N=100,Nruns=2000,Ninterval=10,Ntransient=10000,n_jobs=2,parallelization='internal',number_of_concurrent=15)
+    print('finished running example')
     
     # ####store main results###
     # print('making plots')
