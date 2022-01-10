@@ -300,7 +300,7 @@ for u in unitless_u:
         Ninterval=10
         Ntransient=300000
         transient=200
-        offset_C=np.ones((N-1,))/15
+        offset_C=0*np.ones((N-1,))/15
         res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
                       parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C)
     
@@ -418,7 +418,7 @@ for u in unitless_u:
                 fig=plt.figure(figsize=(11,6))
                 plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
 
-                plt.title('Best MC Fit parameters for u={:.2f}, q0={:.2f}e: '.format(u,q0)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}'.format(1e6*par[0]),np.mean(offset_C))
+                plt.title('Best MC Fit parameters for u={:.2f}, q0={:.2f}e: '.format(u,q0)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}'.format(1e6*par[0],np.mean(offset_C)))
                 # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                 plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[2]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                 plt.ylabel('conductance [Si]')
@@ -443,7 +443,7 @@ for u in unitless_u:
                 plt.ylabel('conductance [Si]')
                 plt.xlabel('Bias voltage [V]')
                 plt.tight_layout()
-                
+                plt.grid()
                 plt.legend(loc=3)
                 try:
                     fig.savefig(res.filepath+'Chi_sq_plot.png')

@@ -372,7 +372,7 @@ class CBTmain: #just does the simulation, no further analysis
         E[2*self.N-1::2*self.N]=E[2*self.N-1::2*self.N]-self.boundary_works
 
         return E
-    def update_transition_rate(self,n1,update_gammas=True):
+    def update_transition_rate(self,n1):
         """
         
 
@@ -381,8 +381,6 @@ class CBTmain: #just does the simulation, no further analysis
         n1 : 2d-numpy array
             first index is the charge on the ith island, second index is a seperate charge configuration that eveolves independently.
 
-        update_gammas : bool, optional
-            whether or not to update the attribute gammas. The default is True.
 
         Returns
         -------
@@ -391,53 +389,58 @@ class CBTmain: #just does the simulation, no further analysis
 
         """
 
-        limit1=1e-12
-        limit2=1e12
+
 
         dE=-self.dE_f(n1)
-        try:
-            Gamma=np.array(self.gammas)#np.zeros_like(dE)
-        except AttributeError:
-            Gamma=np.zeros_like(dE)
-            
-        if dE.ndim==1:
-            try:
-                #Gamma=-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
-                Gamma=1/exprel(-dE)#-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
-            except FloatingPointError:
-                print('FFfloat!!')
-                c1=-dE*self.u>np.log(limit1)
-                c2=-dE*self.u<np.log(limit2)
-                c5=-dE*self.u<=np.log(limit1)
-                c6=-dE*self.u>=np.log(limit2)
-                dE1=dE[(c1) & (c2)]
-                try:
-                    Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
-                except FloatingPointError:
-                    print('a floating point error occurred for dE[..]='+str(dE1))
-                    c3=-dE*self.u<0
-                    c4=-dE*self.u>0
-                    dE3=dE[(c1) & (c3)]
-                    dE4=dE[(c4) & (c2)]
-                    Gamma[(c1) & (c3)]=dE3/(1-np.exp(-dE3*self.u))
-                    Gamma[(c4) & (c2)]=dE4/(1-np.exp(-dE4*self.u))
-                    Gamma[dE*self.u==0.]=1/(self.u)
-                Gamma[c5]=dE[c5]
-                try:
-                    dE2=dE[c6]
-                    Gamma[c6]=-dE2*np.exp(dE2*self.u)
-                except FloatingPointError:
-                    Gamma[c6]=0
-            # print('updating transition rates')
+        Gamma=1/(self.u*exprel(-self.u*dE))
+        self.gammas=self.gi*Gamma
+            # self.sumgammas=sum(self.gammas)
+        self.gammas3=Gamma.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
+        return self.gammas
+        # if dE.ndim==1:
+        #     try:
+        #         #Gamma=-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
+        #         Gamma=1/(self.u*exprel(-self.u*dE))#-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
+        #     except FloatingPointError:
+        #         print('FFfloat!!')
+        #         try:
+        #             Gamma=np.array(self.gammas)#np.zeros_like(dE)
+        #         except AttributeError:
+        #             Gamma=np.empty(dE)
+        #         limit1=1e-12
+        #         limit2=1e12
+        #         c1=-dE*self.u>np.log(limit1)
+        #         c2=-dE*self.u<np.log(limit2)
+        #         c5=-dE*self.u<=np.log(limit1)
+        #         c6=-dE*self.u>=np.log(limit2)
+        #         dE1=dE[(c1) & (c2)]
+        #         try:
+        #             Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
+        #         except FloatingPointError:
+        #             print('a floating point error occurred for dE[..]='+str(dE1))
+        #             c3=-dE*self.u<0
+        #             c4=-dE*self.u>0
+        #             dE3=dE[(c1) & (c3)]
+        #             dE4=dE[(c4) & (c2)]
+        #             Gamma[(c1) & (c3)]=dE3/(1-np.exp(-dE3*self.u))
+        #             Gamma[(c4) & (c2)]=dE4/(1-np.exp(-dE4*self.u))
+        #             Gamma[dE*self.u==0.]=1/(self.u)
+        #         Gamma[c5]=dE[c5]
+        #         try:
+        #             dE2=dE[c6]
+        #             Gamma[c6]=-dE2*np.exp(dE2*self.u)
+        #         except FloatingPointError:
+        #             Gamma[c6]=0
+        #     # print('updating transition rates')
 
-            if update_gammas:
-                self.gammas=self.gi*Gamma
-                # self.sumgammas=np.sum(self.gammas)
-            self.gammas3=Gamma.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
-            return self.gi*Gamma
 
-        else:
-            print('something is wrong with the dimensions of energy difference')
+        #     self.gammas=self.gi*Gamma
+        #         # self.sumgammas=sum(self.gammas)
+        #     self.gammas3=Gamma.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
+        #     return self.gammas
+
+        # else:
+        #     print('something is wrong with the dimensions of energy difference')
     def P(self,n,update=False):
         """
         
@@ -518,7 +521,7 @@ class CBTmain: #just does the simulation, no further analysis
                 self.dQp.append(self.dQ_f())
 
             self.indices=pick_event2(self.p)#self.pick_event(neff,1)
-            self.indices=list(self.indices)
+            # self.indices=list(self.indices)
             n_new=neff+self.MM[:,self.indices]
             self.ns=n_new
             
@@ -526,7 +529,7 @@ class CBTmain: #just does the simulation, no further analysis
             print('FloatingPointError Occurred; trying to redo step. This may occur when the sum of the transition rates is very small. In this case, the sums are: '+str(self.Gamsum)+". However, I think the bug causing this is gone now.")
             print(np.sum(self.p,axis=1))
             self.indices=pick_event2(self.p)#self.pick_event(neff,1)
-            self.indices=list(self.indices)
+            # self.indices=list(self.indices)
             n_new=neff+self.MM[:,self.indices]#[:,:,0]
             self.ns=n_new
             self.multistep()
