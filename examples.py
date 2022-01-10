@@ -298,9 +298,9 @@ for u in unitless_u:
         q0=0*np.random.uniform(low=-0.5,high=0.5,size=(N-1,))
         Nruns=8000
         Ninterval=10
-        Ntransient=50000
+        Ntransient=300000
         transient=200
-        offset_C=np.ones((N-1,))/50
+        offset_C=np.ones((N-1,))/15
         res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
                       parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C)
     
