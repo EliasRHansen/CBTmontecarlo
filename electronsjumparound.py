@@ -19,7 +19,10 @@ import os
 from datetime import datetime
 from numba import njit
 from scipy.special import exprel
-
+from itertools import product
+from scipy.interpolate import interp1d
+from scipy.optimize import curve_fit
+import os
 np.seterr(all = 'raise')
 kB=8.617*1e-5
 e_SI=1.602*1e-19
@@ -126,6 +129,7 @@ class CBTmain: #just does the simulation, no further analysis
             should be true. "skips" the data from the transient regime. Only reason to set it false would be to see how the current evolve in time from the highly improbable initial state.
         parallelization : str, optional
             "external": simulations for each voltage are run in parallel using the joblib library in batches of size given by the input batchsize. 
+                        Debugging can be very hard 'external' since references are made to the internals of the joblib module rather than the code.
             "internal": simulations for each voltage are run in parallel by fancy numpy vectorization, but uses a for-loop to iiterate over batches.
             "non": for loop structure is used to iterate over voltages.
             
@@ -206,7 +210,9 @@ class CBTmain: #just does the simulation, no further analysis
         dm1=np.roll(dm1,-1)
         dm2=np.roll(dm2,-1)
         d0=np.roll(dm2,2)+np.roll(dm1,1)+np.roll(d1,-1)+np.roll(d2,-2)+np.concatenate((self.offset_C,np.zeros((2,))))
-        data=np.array([-dm2,-dm1,d0,-d1,-d2])
+
+        self.Ec_factor=2/np.mean(d0)
+        data=np.array([-dm2,-dm1,d0,-d1,-d2])*self.Ec_factor
         data=data[:,0:-2]
         offsets=np.array([-2,-1,0,1,2])
         self.C=sparse.dia_matrix((data,offsets),shape=(N-1,N-1),dtype=dtype)
@@ -331,18 +337,18 @@ class CBTmain: #just does the simulation, no further analysis
         if iterable(self.U)==False:
             C=np.einsum('ij,ij->j',self.MMM_withoutU,self.B_withoutU)/2
             
-            self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])
+            self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor
             self.boundary_works=self.U/(2*self.Ec)
             self.gi=np.tile(self.Cs,int(len(self.dE0)/self.N))
-            self.gi2=self.gi.reshape(self.number_of_concurrent,2*self.N)
+            # self.gi2=self.gi.reshape(self.number_of_concurrent,2*self.N)
         else:
 
             self.B=self.Cinv@self.MMM
             C=np.einsum('ij,ij->j',self.MMM,self.B)/2
-            bound=np.kron(self.U/(self.Ec),(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:]))
+            bound=np.kron(self.U/(self.Ec),(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor)
             self.boundary_works=self.U.repeat(number_of_concurrent)/(2*self.Ec)
             self.gi=np.tile(self.Cs,int(len(bound)/self.N))
-            self.gi2=self.gi.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
+            # self.gi2=self.gi.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
             print('gi:'+str(self.gi))
             self.dE0=C+bound
         # else:
@@ -392,55 +398,52 @@ class CBTmain: #just does the simulation, no further analysis
 
 
         dE=-self.dE_f(n1)
-        Gamma=1/(self.u*exprel(-self.u*dE))
-        self.gammas=self.gi*Gamma
-            # self.sumgammas=sum(self.gammas)
-        self.gammas3=Gamma.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
-        return self.gammas
-        # if dE.ndim==1:
-        #     try:
-        #         #Gamma=-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
-        #         Gamma=1/(self.u*exprel(-self.u*dE))#-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
-        #     except FloatingPointError:
-        #         print('FFfloat!!')
-        #         try:
-        #             Gamma=np.array(self.gammas)#np.zeros_like(dE)
-        #         except AttributeError:
-        #             Gamma=np.empty(dE)
-        #         limit1=1e-12
-        #         limit2=1e12
-        #         c1=-dE*self.u>np.log(limit1)
-        #         c2=-dE*self.u<np.log(limit2)
-        #         c5=-dE*self.u<=np.log(limit1)
-        #         c6=-dE*self.u>=np.log(limit2)
-        #         dE1=dE[(c1) & (c2)]
-        #         try:
-        #             Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
-        #         except FloatingPointError:
-        #             print('a floating point error occurred for dE[..]='+str(dE1))
-        #             c3=-dE*self.u<0
-        #             c4=-dE*self.u>0
-        #             dE3=dE[(c1) & (c3)]
-        #             dE4=dE[(c4) & (c2)]
-        #             Gamma[(c1) & (c3)]=dE3/(1-np.exp(-dE3*self.u))
-        #             Gamma[(c4) & (c2)]=dE4/(1-np.exp(-dE4*self.u))
-        #             Gamma[dE*self.u==0.]=1/(self.u)
-        #         Gamma[c5]=dE[c5]
-        #         try:
-        #             dE2=dE[c6]
-        #             Gamma[c6]=-dE2*np.exp(dE2*self.u)
-        #         except FloatingPointError:
-        #             Gamma[c6]=0
-        #     # print('updating transition rates')
 
 
-        #     self.gammas=self.gi*Gamma
-        #         # self.sumgammas=sum(self.gammas)
-        #     self.gammas3=Gamma.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
-        #     return self.gammas
+        if dE.ndim==1:
+            try:
+                #Gamma=-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
+                Gamma=1/(self.u*exprel(-self.u*dE))#-dE/np.expm1(-dE*self.u)#(1-np.exp(-dE*self.u))
+            except FloatingPointError:
+                print('FFfloat!!')
+                try:
+                    Gamma=np.array(self.gammas)#np.zeros_like(dE)
+                except AttributeError:
+                    Gamma=np.empty(dE)
+                limit1=1e-12
+                limit2=1e12
+                c1=-dE*self.u>np.log(limit1)
+                c2=-dE*self.u<np.log(limit2)
+                c5=-dE*self.u<=np.log(limit1)
+                c6=-dE*self.u>=np.log(limit2)
+                dE1=dE[(c1) & (c2)]
+                try:
+                    Gamma[(c1) & (c2)]=-dE1/np.expm1(-dE1*self.u)#(1-np.exp(-dE1*self.u))
+                except FloatingPointError:
+                    print('a floating point error occurred for dE[..]='+str(dE1))
+                    c3=-dE*self.u<0
+                    c4=-dE*self.u>0
+                    dE3=dE[(c1) & (c3)]
+                    dE4=dE[(c4) & (c2)]
+                    Gamma[(c1) & (c3)]=dE3/(1-np.exp(-dE3*self.u))
+                    Gamma[(c4) & (c2)]=dE4/(1-np.exp(-dE4*self.u))
+                    Gamma[dE*self.u==0.]=1/(self.u)
+                Gamma[c5]=dE[c5]
+                try:
+                    dE2=dE[c6]
+                    Gamma[c6]=-dE2*np.exp(dE2*self.u)
+                except FloatingPointError:
+                    Gamma[c6]=0
+            # print('updating transition rates')
 
-        # else:
-        #     print('something is wrong with the dimensions of energy difference')
+
+            self.gammas=self.gi*Gamma
+                # self.sumgammas=sum(self.gammas)
+            self.gammas3=Gamma.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
+            return self.gammas
+
+        else:
+            print('something is wrong with the dimensions of energy difference')
     def P(self,n,update=False):
         """
         
@@ -1095,9 +1098,136 @@ def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,
     else:
         print('data analysis is not done since, the conductances cannot be calculated due to the option split_voltage is False. The raw_result will be used as output.')
         return raw_result
+def chi(a,b,delta):
+    return np.sum((a-b)**2/delta**2)
 
-def fit_carlo(dataV,dataG,u):
-    pass
+def fit_carlo(V_data,G_data,u,V_data_std=None,G_data_std=None,V=None,N=100,Nruns=30000,Ninterval=10,Ntransient=300000,n_jobs=2,number_of_concurrent=20,parallelization='external',
+              q0=0,dV=None,batchsize=10,transient=500,offset_C=None,dC=0,second_order_C=None,plot=True,reload=False,filename=None,p0=None,save=True):
+        
+        if V is None:
+            points =131
+            lim=5.2*5.439*N
+            V=np.linspace(-lim,lim,points)
+        if dV is None:
+            dV=5.439*N/(u*50)
+        if V_data_std is None:
+            V_data_std=0*V_data
+        if G_data_std is None:
+            G_data_std=0*G_data
+        if reload is False:
+            print('running MC simulation for u='+str(u))
+            res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=n_jobs,number_of_concurrent=number_of_concurrent,
+                          parallelization=parallelization,q0=q0,dV=dV,batchsize=batchsize,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+            ####store main results###
+            mean_conductances=res.Gsm #mean conductance
+            std_conductance=res.Gstd #standard deviation of conductance
+        else:
+            print('loading data from file')
+            mean_conductances=np.load(filename)['Gsm']
+            std_conductance=np.load(filename)['Gstd'] #standard deviation of conductance
+        
+        model=interp1d(V,mean_conductances,kind='linear',bounds_error=False,fill_value=(np.mean(mean_conductances[0:3]),np.mean(mean_conductances[-3::])))
+        wacky_sigma=interp1d(V,std_conductance,kind='linear',bounds_error=False,fill_value=(np.mean(std_conductance[0:3]),np.mean(std_conductance[-3::])))
+        def CBT_model_g(x):
+            """
+            
+    
+            Parameters
+            ----------
+            x : floats
+                unitsless variable.
+    
+            Returns
+            -------
+            function used in CBT model
+    
+    
+            """
+            return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
+        def f0(V,Ec,Gt,V0,T):
+            
+            return Gt*(1-(Ec/(kB*T))*CBT_model_g((V_data-V0)/(N*kB*T)))
+        if p0 is None:
+            p0=[4e-6,2.16e-5,0,30e-3]
+        par0,cov0=curve_fit(f0,V_data,G_data,p0=p0)
+        def f(V,Ec,Gt,V0):
+            return Gt*model((V-V0)/Ec)
+                
+        p_model=[par0[0],par0[1],par0[2]]
+        error_check=True
+        number_of_tries=0
+        max_tries=5
+        while error_check==True:
+            number_of_tries+=1
+            try:
+                
+                par,cov=curve_fit(f,V_data,G_data,p0=p_model,sigma=wacky_sigma(V_data))
+                print(par)
+                G_MC=f(V_data,*par)
+                chi_model=chi(G_data,G_MC,wacky_sigma(V_data/par[0])*par[1]/np.sqrt(number_of_concurrent))
+                chi_0=chi(G_data,f0(V_data,*par0),np.mean(wacky_sigma(V_data/par[0])*par[1]/np.sqrt(number_of_concurrent)))
+                if plot:
+                    fig=plt.figure(figsize=(11,6))
+                    plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
+                    plt.title('Best MC Fit parameters for u={:.2f}, <$q_0^2$>={:.2f}e: '.format(u,np.mean(q0**2))+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}, <$\delta C^2$>/C={:.2f}, $C^(2)$/C={:.3f}'.format(1e6*par[0],np.mean(offset_C),np.mean(dC**2),np.mean(second_order_C)))
+                    # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
+                    plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
+                    plt.ylabel('conductance [Si]')
+                    plt.xlabel('Bias voltage [V]')
+                    plt.tight_layout()
+                    
+                    plt.legend(loc=3)
+                    try:
+                        fig.savefig(res.filepath+'Chi_sq_plot1.png')
+                    except FileNotFoundError:
+                        os.mkdir(res.filepath)
+                        fig.savefig(res.filepath+'Chi_sq_plot1.png')
+                        
+                    fig=plt.figure(figsize=(11,6))
+                    plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
+                    plt.title('Best MC Fit parameters for u={:.2f}, <$q_0^2$>={:.2f}e: '.format(u,np.mean(q0**2))+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV'.format(1e6*par[0]))
+                    # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
+                    plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
+    
+                    #plt.plot(V_data,res.CBT_model_G((V_data-par[2])/par[0])*par[1],label='1st order result for same parameters as the MC')
+                    plt.plot(V_data,f0(V_data,*par0),label='1st order result for optimal first order parameters: T={:.1f}mK'.format(1e3*par0[3]))
+                    plt.legend(loc=3)
+                    plt.ylabel('conductance [Si]')
+                    plt.xlabel('Bias voltage [V]')
+                    plt.tight_layout()
+                    try:
+                        if save:
+                            res.plotG(save=True)
+                        else:
+                            res.plotG()
+                    except Exception:
+                        pass #not important
+                    if save:
+                        try:
+                            fig.savefig(res.filepath+'Chi_sq_plot.png')
+                        except FileNotFoundError:
+                            os.mkdir(res.filepath)
+                            fig.savefig(res.filepath+'Chi_sq_plot.png')
+                            
+                        res.savedata()
+                    
+                    error_check=False
+            except RuntimeError:
+                print('The least square optimizer did not converge for these parameters')
+                p_model[0]=p_model[0]+np.random.uniform(low=-1,high=1)*p_model[0]*1e-1
+                p_model[1]=p_model[1]+np.random.uniform(low=-1,high=1)*p_model[1]*1e-1
+                p_model[2]=p_model[2]+np.random.uniform(low=-1,high=1)*p_model[2]*1e-1
+                print('Trying again with new parameters: '+str(p_model))
+            if number_of_tries>1:
+                print('number of tries:')
+                print(number_of_tries)
+                if number_of_tries>max_tries:
+                    print('RuntimeError: leastq optimization failed for this run after  '+str(max_tries)+' number of tries')
+                    error_check=False
+        return f0,par,wacky_sigma,chi_model
+            
+
+#%%
 if __name__=='__main__': #runs only if the file is being run explicitly
     pass
     ###################################################For testing########################################
@@ -1108,14 +1238,14 @@ if __name__=='__main__': #runs only if the file is being run explicitly
     T=0.01 #Temperature in Kelvin
     FWHM=5.439*kB*T*N #Full width half max according to the first order model
 
-    points=11 #number of voltages to run the simulation for
+    points=101 #number of voltages to run the simulation for
     lim=3*FWHM 
     V=np.linspace(-lim,lim,points)
     
     
     ####Run main simulation####
     print('runing example')
-    res=carlo_CBT(V,T,Ec,Gt,N=100,Nruns=2000,Ninterval=10,Ntransient=10000,n_jobs=2,parallelization='internal',number_of_concurrent=15)
+    #res=carlo_CBT(V,T,Ec,Gt,N=100,Nruns=2000,Ninterval=10,Ntransient=10000,n_jobs=2,parallelization='internal',number_of_concurrent=15)
     print('finished running example')
     
     # ####store main results###
@@ -1125,5 +1255,121 @@ if __name__=='__main__': #runs only if the file is being run explicitly
     # mean_currents=res.currentsm #mean currents
     # res.plotG(save=True)
     # res.plotI(save=True)
+#%%
+if __name__=='__main__':
+    ####New example###
+    lim=5*5.439*N
+    V=np.linspace(-lim,lim,points)
+    number_of_concurrent=12
+    q0=0*np.random.uniform(low=-1,high=1,size=(N-1,))
+    Nruns=30000
+    Ninterval=10
+    Ntransient=300000
+    transient=500
+    offset_C=0*np.ones((N-1,))/4
+    dC=0#np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
+    second_order_C=np.ones((N,))/4
+    u=2.5
+    res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+
+    second_order_C=0*np.ones((N,))/4
+    offset_C=0*np.ones((N-1,))/4
+    res2=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
     
+    offset_C=np.ones((N-1,))/4
+    res3=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+    offset_C=0*np.ones((N-1,))/4
+    q0=np.random.uniform(low=-1,high=1,size=(N-1,))
+    res4=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+
+    q0=0*np.random.uniform(low=-1,high=1,size=(N-1,))
+    dC=np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
+    res5=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+    q0=1/2 #0*np.random.uniform(low=-1,high=1,size=(N-1,))
+    dC=0*np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
+    res6=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+                                
+    np.seterr(all = 'warn')
+    plt.figure(figsize=(11,6))
+    V=np.linspace(-5,5,points)
+    plt.errorbar(V,res2.Gsm,yerr=res2.Gstd,label='without any effects',linewidth=3)
+    plt.errorbar(V,res.Gsm,yerr=res.Gstd,fmt='--',label='with second order effects')
+    plt.errorbar(V,res3.Gsm,yerr=res3.Gstd,label='with offset C effects')
+    plt.errorbar(V,res4.Gsm,yerr=res4.Gstd,label='with random offset charge effects')
+    plt.errorbar(V,res5.Gsm,yerr=res5.Gstd,label='with random R and C effects')
+    plt.errorbar(V,res6.Gsm,yerr=res5.Gstd,label='with q0=+1/2')
+    Vs=np.linspace(-lim,lim,12000)
+    plt.plot(Vs/(5.439*N),res.CBT_model_G(Vs),label='first order approximation',linewidth=3)
     
+    plt.plot([0],[1-u/6+u**2/60-u**3/630],'o',label='third order prediction for the minimum')
+    plt.xlabel('Voltage [$FWHM_0$]')
+    plt.ylabel('G/$G_T$')
+    plt.legend(loc=3)
+    plt.grid()
+    plt.tight_layout()
+#%%
+if __name__=='__main__':
+    ####New example###
+    lim=5*5.439*N
+    V=np.linspace(-lim,lim,points)
+    number_of_concurrent=15
+    q0=0*np.random.uniform(low=-1,high=1,size=(N-1,))
+    Nruns=30000
+    Ninterval=5
+    Ntransient=300000
+    transient=1000
+    offset_C=0*np.ones((N-1,))/4
+    dC=0#np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
+    second_order_C=0*np.ones((N,))/4
+    dC=np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
+    u=3
+    res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+    res.plotG()
+    dC=0
+    res2=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+    res2.plotG()
+    dC=np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
+    u=4
+    res3=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+    res3.plotG()
+    dC=0
+    res4=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+    res4.plotG()   
+    dC=np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
+    u=5
+    res5=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+    res5.plotG()
+    dC=0
+    res6=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+                                
+    res6.plotG()
+    np.seterr(all = 'warn')
+    plt.figure(figsize=(11,6))
+    V=np.linspace(-5,5,points)
+    plt.errorbar(V,res2.Gsm,yerr=res2.Gstd,label='u=3, dC finite',linewidth=3)
+    plt.errorbar(V,res.Gsm,yerr=res.Gstd,fmt='--',label='u=3 dC zero')
+    plt.errorbar(V,res3.Gsm,yerr=res3.Gstd,label='u=4, dC finite')
+    plt.errorbar(V,res4.Gsm,yerr=res4.Gstd,label='u=4, dC zero')
+    plt.errorbar(V,res5.Gsm,yerr=res5.Gstd,label='u=5, dC finite')
+    plt.errorbar(V,res6.Gsm,yerr=res5.Gstd,label='u=5, dC zero')
+    Vs=np.linspace(-lim,lim,12000)
+    plt.plot(Vs/(5.439*N),res.CBT_model_G(Vs),label='first order approximation',linewidth=3)
+    
+    plt.plot([0],[1-u/6+u**2/60-u**3/630],'o',label='third order prediction for the minimum')
+    plt.xlabel('Voltage [$FWHM_0$]')
+    plt.ylabel('G/$G_T$')
+    plt.legend(loc=3)
+    plt.grid()
+    plt.tight_layout()

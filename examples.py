@@ -188,7 +188,7 @@ G_data=dGs_av[400:1100][::10]
 plt.figure()
 plt.plot(V_data,G_data,'.')
 p0=[30e-3,4e-6,2.17e-5,0]
-res=curve_fit(fit_to_carlo,V_data,G_data,p0=p0,epsfcn=5e-3,full_output=True)
+# res=curve_fit(fit_to_carlo,V_data,G_data,p0=p0,epsfcn=5e-3,full_output=True)
 #%%
 
 
@@ -278,31 +278,30 @@ import os
 
 
 
-def f0(V,Ec,Gt,V0,T):
-    return Gt*(1-(Ec/(kB*T))*res.CBT_model_g((V_data-V0)/(N*kB*T)))
-p0=[4e-6,2.16e-5,0,30e-3]
-par0,cov0=curve_fit(f0,V_data,G_data,p0=p0)
+
 def chi(a,b,delta):
     return np.sum((a-b)**2/delta**2)
 # q0s=np.linspace(-0.2,0.2,3)
-unitless_u=np.linspace(1.96,2.6,12)
+unitless_u=np.linspace(2,2.6,10)
 chi_sq_uniform=[]
 chi_sq_0=[]
 for u in unitless_u:
 
-        print(u)
+        # print(u)
 
         lim=5.2*5.439*N
         V=np.linspace(-lim,lim,points)
-        number_of_concurrent=15
-        q0=0*np.random.uniform(low=-0.5,high=0.5,size=(N-1,))
-        Nruns=8000
+        number_of_concurrent=20
+        q0=0*np.random.uniform(low=-1,high=1,size=(N-1,))
+        Nruns=30000
         Ninterval=10
         Ntransient=300000
-        transient=200
-        offset_C=0*np.ones((N-1,))/15
+        transient=500
+        offset_C=0*np.ones((N-1,))/10
+        dC=0#np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
+        second_order_C=np.ones((N,))/10
         res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
-                      parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C)
+                      parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
     
     
         ####store main results###
@@ -311,6 +310,11 @@ for u in unitless_u:
         mean_currents=res.currentsm #mean currents
         model=interp1d(V,mean_conductances,kind='linear',bounds_error=False,fill_value=(np.mean(mean_conductances[0:3]),np.mean(mean_conductances[-3::])))
         wacky_sigma=interp1d(V,std_conductance,kind='linear',bounds_error=False,fill_value=(np.mean(std_conductance[0:3]),np.mean(std_conductance[-3::])))
+        
+        def f0(V,Ec,Gt,V0,T):
+            return Gt*(1-(Ec/(kB*T))*res.CBT_model_g((V_data-V0)/(N*kB*T)))
+        p0=[4e-6,2.16e-5,0,30e-3]
+        par0,cov0=curve_fit(f0,V_data,G_data,p0=p0)
         def f(V,Ec,Gt,V0):
             return Gt*model((V-V0)/Ec)
                 
@@ -330,7 +334,7 @@ for u in unitless_u:
                 chi_sq_uniform.append(chi_model)
                 fig=plt.figure(figsize=(11,6))
                 plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
-                plt.title('Best MC Fit parameters for u={:.2f}, q0="uniformly distributed": '.format(u)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}'.format(1e6*par[0],np.mean(offset_C)))
+                plt.title('Best MC Fit parameters for u={:.2f}, q0="uniformly distributed": '.format(u)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}, <$\delta C^2$>/C={:.2f}, $C^(2)$/C={:.3f}'.format(1e6*par[0],np.mean(offset_C),np.mean(dC**2),np.mean(second_order_C)))
                 # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                 plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                 plt.ylabel('conductance [Si]')
@@ -383,93 +387,94 @@ for u in unitless_u:
             pass #not important
         plt.close()
         ##########################################################################################
-        print('running the same simulation for q0=0')
-        lim=5.2*5.439*N
-        V=np.linspace(-lim,lim,points)
-        # number_of_concurrent=10
-        q0=0
-        offset_C=np.ones((N-1,))*0
-        res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
-                      parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C)
+        # print('running the same simulation for q0=0')
+        # lim=5.2*5.439*N
+        # V=np.linspace(-lim,lim,points)
+        # # number_of_concurrent=10
+        # q0=0
+        # offset_C=np.ones((N-1,))*0
+        # dC=0
+        # res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+        #               parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC)
     
-        ####store main results###
-        mean_conductances=res.Gsm #mean conductance
-        std_conductance=res.Gstd #standard deviation of conductance
-        mean_currents=res.currentsm #mean currents
-        model=interp1d(V,mean_conductances,kind='linear',bounds_error=False,fill_value=(np.mean(mean_conductances[0:3]),np.mean(mean_conductances[-3::])))
-        wacky_sigma=interp1d(V,std_conductance,kind='linear',bounds_error=False,fill_value=(np.mean(std_conductance[0:3]),np.mean(std_conductance[-3::])))
-        def f(V,Ec,Gt,V0):
-            return Gt*model((V-V0)/Ec)
+        # ####store main results###
+        # mean_conductances=res.Gsm #mean conductance
+        # std_conductance=res.Gstd #standard deviation of conductance
+        # mean_currents=res.currentsm #mean currents
+        # model=interp1d(V,mean_conductances,kind='linear',bounds_error=False,fill_value=(np.mean(mean_conductances[0:3]),np.mean(mean_conductances[-3::])))
+        # wacky_sigma=interp1d(V,std_conductance,kind='linear',bounds_error=False,fill_value=(np.mean(std_conductance[0:3]),np.mean(std_conductance[-3::])))
+        # def f(V,Ec,Gt,V0):
+        #     return Gt*model((V-V0)/Ec)
         
-        p_model=[par0[0],par0[1],par0[2]]
-        error_check=True
-        number_of_tries=0
-        max_tries=5
-        while error_check==True:
-            number_of_tries+=1
-            try:
+        # p_model=[par0[0],par0[1],par0[2]]
+        # error_check=True
+        # number_of_tries=0
+        # max_tries=5
+        # while error_check==True:
+        #     number_of_tries+=1
+        #     try:
                 
-                par,cov=curve_fit(f,V_data,G_data,p0=p_model,sigma=V_data_std)
-                print(par)
-                G_MC=f(V_data,*par)
-                chi_model=chi(G_data,G_MC,wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent))
-                chi_0=chi(G_data,f0(V_data,*par0),np.mean(wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent)))
-                chi_sq_0.append(chi_model)
-                fig=plt.figure(figsize=(11,6))
-                plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
+        #         par,cov=curve_fit(f,V_data,G_data,p0=p_model,sigma=V_data_std)
+        #         print(par)
+        #         G_MC=f(V_data,*par)
+        #         chi_model=chi(G_data,G_MC,wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent))
+        #         chi_0=chi(G_data,f0(V_data,*par0),np.mean(wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent)))
+        #         chi_sq_0.append(chi_model)
+        #         fig=plt.figure(figsize=(11,6))
+        #         plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
 
-                plt.title('Best MC Fit parameters for u={:.2f}, q0={:.2f}e: '.format(u,q0)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}'.format(1e6*par[0],np.mean(offset_C)))
-                # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
-                plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[2]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
-                plt.ylabel('conductance [Si]')
-                plt.xlabel('Bias voltage [V]')
-                plt.tight_layout()
+        #         plt.title('Best MC Fit parameters for u={:.2f}, q0={:.2f}e: '.format(u,q0)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}, <$\delta$ C>/C={:.2f}'.format(1e6*par[0],np.mean(offset_C),np.mean(dC)))
+        #         # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
+        #         plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[2]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
+        #         plt.ylabel('conductance [Si]')
+        #         plt.xlabel('Bias voltage [V]')
+        #         plt.tight_layout()
                 
-                plt.legend(loc=3)
-                try:
-                    fig.savefig(res.filepath+'Chi_sq_plot1.png')
-                except FileNotFoundError:
-                    os.mkdir(res.filepath)
-                    fig.savefig(res.filepath+'Chi_sq_plot1.png')
-                fig=plt.figure(figsize=(11,6))
-                plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
+        #         plt.legend(loc=3)
+        #         try:
+        #             fig.savefig(res.filepath+'Chi_sq_plot1.png')
+        #         except FileNotFoundError:
+        #             os.mkdir(res.filepath)
+        #             fig.savefig(res.filepath+'Chi_sq_plot1.png')
+        #         fig=plt.figure(figsize=(11,6))
+        #         plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
 
-                plt.title('Best MC Fit parameters for u={:.2f}, q0={:.2f}e: '.format(u,q0)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV'.format(1e6*par[0]))
-                # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
-                plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[2]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
+        #         plt.title('Best MC Fit parameters for u={:.2f}, q0={:.2f}e: '.format(u,q0)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV'.format(1e6*par[0]))
+        #         # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
+        #         plt.errorbar(V*par[0]+par[2],mean_conductances*par[1],yerr=par[2]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
 
-                plt.plot(V_data,res.CBT_model_G((V_data-par[2])/par[0])*par[1],label='1st order result for same parameters as the MC')
-                plt.plot(V_data,f0(V_data,*par0),label='1st order result for optimal first order parameters: T={:.1e}mK'.format(1e3*par0[3]))
-                plt.ylabel('conductance [Si]')
-                plt.xlabel('Bias voltage [V]')
-                plt.tight_layout()
-                plt.grid()
-                plt.legend(loc=3)
-                try:
-                    fig.savefig(res.filepath+'Chi_sq_plot.png')
-                except FileNotFoundError:
-                    os.mkdir(res.filepath)
-                    fig.savefig(res.filepath+'Chi_sq_plot.png')
+        #         plt.plot(V_data,res.CBT_model_G((V_data-par[2])/par[0])*par[1],label='1st order result for same parameters as the MC')
+        #         plt.plot(V_data,f0(V_data,*par0),label='1st order result for optimal first order parameters: T={:.1e}mK'.format(1e3*par0[3]))
+        #         plt.ylabel('conductance [Si]')
+        #         plt.xlabel('Bias voltage [V]')
+        #         plt.tight_layout()
+        #         plt.grid()
+        #         plt.legend(loc=3)
+        #         try:
+        #             fig.savefig(res.filepath+'Chi_sq_plot.png')
+        #         except FileNotFoundError:
+        #             os.mkdir(res.filepath)
+        #             fig.savefig(res.filepath+'Chi_sq_plot.png')
                     
-                res.savedata()
-                res.plotG()
-                error_check=False
-            except RuntimeError:
-                print('The least square optimizer did not converge for these parameters')
-                p_model[0]=p_model[0]+np.random.uniform(low=-0.5,high=0.5)*p_model[0]*1e-1
-                p_model[1]=p_model[1]+np.random.uniform(low=-0.5,high=0.5)*p_model[1]*1e-1
-                p_model[2]=p_model[2]+np.random.uniform(low=-0.5,high=0.5)*p_model[2]*1e-1
-                print('Trying again with new parameters: '+str(p_model))
-            if number_of_tries>1:
-                print('number of tries:')
-                print(number_of_tries)
-                if number_of_tries>max_tries:
-                    print('RuntimeError: leastq optimization failed for this run after  '+str(max_tries)+' number of tries')
-                    error_check=False
-        try:
-            res.plotG(save=True)
-        except Exception:
-            pass #not important
+        #         res.savedata()
+        #         res.plotG()
+        #         error_check=False
+        #     except RuntimeError:
+        #         print('The least square optimizer did not converge for these parameters')
+        #         p_model[0]=p_model[0]+np.random.uniform(low=-0.5,high=0.5)*p_model[0]*1e-1
+        #         p_model[1]=p_model[1]+np.random.uniform(low=-0.5,high=0.5)*p_model[1]*1e-1
+        #         p_model[2]=p_model[2]+np.random.uniform(low=-0.5,high=0.5)*p_model[2]*1e-1
+        #         print('Trying again with new parameters: '+str(p_model))
+        #     if number_of_tries>1:
+        #         print('number of tries:')
+        #         print(number_of_tries)
+        #         if number_of_tries>max_tries:
+        #             print('RuntimeError: leastq optimization failed for this run after  '+str(max_tries)+' number of tries')
+        #             error_check=False
+        # try:
+        #     res.plotG(save=True)
+        # except Exception:
+        #     pass #not important
         plt.pause(0.05)
         plt.show()
         plt.close()
