@@ -1,2 +1,3 @@
 Notes:
 -simulations performed on the 10/1 that says C0/c=0.1 in the title of some of the plots, also says that q0 is uniformly distributed. this is a mistake; q0 is 0
+-old results are here: https://www.dropbox.com/s/c7n30zyng0674qh/Old%20Results%2001-04%20to%2001-09.zip?dl=0
