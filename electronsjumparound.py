@@ -890,7 +890,7 @@ class CBT_data_analysis:
                 fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current1.png')
                 fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current2.png')
         # self.CBTmain_instance=CBTmain_instance
-    def savedata(self,filename=None):
+    def savedata(self,filename=None,full_results=False):
         """
         
         stores all the input parameters and outputs of the simulation in a folder
@@ -906,39 +906,73 @@ class CBT_data_analysis:
         None.
 
         """
-        if filename is None:
-            try:
-                folder=os.getcwd()+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)
-                print('saving data in folder: '+str(folder))
-                np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),dQ=self.dQ,
+        if full_results:
+            if filename is None:
+                try:
+                    folder=os.getcwd()+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)
+                    print('saving data in folder: '+str(folder))
+                    np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),dQ=self.dQ,
+                                        dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
+                                        N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
+                                        Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
+                                        now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
+                                        number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
+                                        currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C,
+                                        second_order_C=self.raw_data.second_order_C)
+                except FileNotFoundError:
+                    filepath=os.getcwd()
+                    os.mkdir(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time))
+                    np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),dQ=self.dQ,
+                                        dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
+                                        N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
+                                        Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
+                                        now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
+                                        number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
+                                        currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C,
+                                        second_order_C=self.raw_data.second_order_C)
+            else:
+                print('saving data in: '+str(filename))
+                np.savez_compressed(filename,dQ=self.dQ,
                                     dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
                                     N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
                                     Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
                                     now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
-                                    number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
-                                    currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C,
-                                    second_order_C=self.raw_data.second_order_C)
-            except FileNotFoundError:
-                filepath=os.getcwd()
-                os.mkdir(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time))
-                np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),dQ=self.dQ,
-                                    dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
-                                    N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
-                                    Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
-                                    now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
-                                    number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
-                                    currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C,
+                                    number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd
+                                    ,currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C,
                                     second_order_C=self.raw_data.second_order_C)
         else:
-            print('saving data in: '+str(filename))
-            np.savez_compressed(filename,dQ=self.dQ,
-                                dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
-                                N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
-                                Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
-                                now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
-                                number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd
-                                ,currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C,
-                                second_order_C=self.raw_data.second_order_C)
+            if filename is None:
+                try:
+                    folder=os.getcwd()+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)
+                    print('saving data in folder: '+str(folder))
+                    np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),
+                                        T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
+                                        N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
+                                        Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
+                                        now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
+                                        number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
+                                        currentsm=self.currentsm,currentsstd=self.currentsstd,offset_C=self.raw_data.offset_C,
+                                        second_order_C=self.raw_data.second_order_C)
+                except FileNotFoundError:
+                    filepath=os.getcwd()
+                    os.mkdir(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time))
+                    np.savez_compressed(folder+'all_input_and_output_{}.npz'.format(self.raw_data.now),
+                                        T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
+                                        N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
+                                        Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
+                                        now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
+                                        number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
+                                        currentsm=self.currentsm,currentsstd=self.currentsstd,offset_C=self.raw_data.offset_C,
+                                        second_order_C=self.raw_data.second_order_C)
+            else:
+                print('saving data in: '+str(filename))
+                np.savez_compressed(filename,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
+                                    N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
+                                    Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
+                                    now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
+                                    number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
+                                    currentsm=self.currentsm,currentsstd=self.currentsstd,offset_C=self.raw_data.offset_C,
+                                    second_order_C=self.raw_data.second_order_C)
     
 def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='external',
              n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1,q0=0,split_voltage=True,dV=None,

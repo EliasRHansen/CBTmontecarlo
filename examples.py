@@ -484,7 +484,7 @@ all_files = os.listdir(folder_with_results)
 npz_files = list(filter(lambda x: x[-4:] == '.npz', all_files)) 
 
 all_files = os.listdir(folder_with_results)
-fit_result=fit_carlo(V_data,G_data, filename=folder_with_results+npz_files[0],plot=True)
+fit_result=fit_carlo(V_data,G_data, filename=folder_with_results+npz_files[0],plot=True,save_fig_folder=folder_with_results)
 
 #%%
 
