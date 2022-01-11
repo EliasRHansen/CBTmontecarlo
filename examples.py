@@ -6,7 +6,7 @@ Created on Fri Jan  7 02:52:19 2022
 """
 
 import numpy as np
-from electronsjumparound import carlo_CBT
+from electronsjumparound import carlo_CBT,fit_carlo
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 kB=8.617*1e-5
@@ -479,6 +479,15 @@ for u in unitless_u:
         plt.show()
         plt.close()
 #%%
+folder_with_results=os.getcwd()+'\\Results 2022-01-10 20.56.02.630781, sim time=1672.6sec\\'
+all_files = os.listdir(folder_with_results)
+npz_files = list(filter(lambda x: x[-4:] == '.npz', all_files)) 
+
+all_files = os.listdir(folder_with_results)
+fit_result=fit_carlo(V_data,G_data, filename=folder_with_results+npz_files[0],plot=True)
+
+#%%
+
 def ff(V_experiment,u):
     print(u)
     lim=2*5.439*N/u
