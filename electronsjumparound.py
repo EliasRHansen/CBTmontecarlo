@@ -30,7 +30,7 @@ e_SI=1.602*1e-19
 
 def iterable(m):
     """
-    
+
 
     Parameters
     ----------
@@ -38,7 +38,7 @@ def iterable(m):
         Object to be checked for iterability.
 
     Returns
-    
+
     -------
     bool
         true if the object passed is iterable and false otherwise.
@@ -53,7 +53,7 @@ def iterable(m):
 @njit
 def pick_event2(x):
     """
-    
+
 
     Parameters
     ----------
@@ -73,7 +73,7 @@ def pick_event2(x):
     return index
 def split_voltages(V,dV):
     """
-    
+
 
     Parameters
     ----------
@@ -94,11 +94,11 @@ def split_voltages(V,dV):
 
 class CBTmain: #just does the simulation, no further analysis
 
-    
+
     def __init__(self,U,T,Ec,Gt,N,Nruns,Ntransient,number_of_concurrent,Ninterval,skip_transient,parallelization='external',
                  n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1,q0=0):
         """
-        
+
 
         Parameters
         ----------
@@ -107,7 +107,7 @@ class CBTmain: #just does the simulation, no further analysis
         T : float
             temperature in Kelvin.
         Ec : float
-            charging energy. Only the ratio of the charging energy to the the temperature matters for the actual shape. 
+            charging energy. Only the ratio of the charging energy to the the temperature matters for the actual shape.
             At fixed ratio, changing one the the parameters amounts to changing the horizotal scaling.
         Gt : float
             tunneling conductance.
@@ -120,21 +120,21 @@ class CBTmain: #just does the simulation, no further analysis
         number_of_concurrent : int
             number of data points to generate for each voltage (to save time charge configurations are "launched" from the same initial state reached after the transient regime; however, the initial state will be different for each voltage, since the probable steady state configurations will be different).
         Ninterval : int
-            interval between datapoint storage of charge differentials and time differentials. 
-            decreasing Ninterval obviously increases simulation time (albeit very little), 
-            and decreasing is below the autocorrelation time doesnt decrease the variance of the final data 
-            (however, the covariance of the current/conductance data points are not increased by decreasing 
+            interval between datapoint storage of charge differentials and time differentials.
+            decreasing Ninterval obviously increases simulation time (albeit very little),
+            and decreasing is below the autocorrelation time doesnt decrease the variance of the final data
+            (however, the covariance of the current/conductance data points are not increased by decreasing
              Ninterval since those are generated from seperate parallel runs).
         skip_transient : bool
             should be true. "skips" the data from the transient regime. Only reason to set it false would be to see how the current evolve in time from the highly improbable initial state.
         parallelization : str, optional
-            "external": simulations for each voltage are run in parallel using the joblib library in batches of size given by the input batchsize. 
+            "external": simulations for each voltage are run in parallel using the joblib library in batches of size given by the input batchsize.
                         Debugging can be very hard 'external' since references are made to the internals of the joblib module rather than the code.
             "internal": simulations for each voltage are run in parallel by fancy numpy vectorization, but uses a for-loop to iiterate over batches.
             "non": for loop structure is used to iterate over voltages.
-            
+
             The only reason not to use "external" is if the jobliib library somehow fails or interferes with other code.
-            
+
             The default is 'external'.
         n0 : 1D-array of float of size N-1, optional
             initial charge configuration. The default is zeros.
@@ -173,7 +173,7 @@ class CBTmain: #just does the simulation, no further analysis
             self.offset_C=offset_C
         else:
             self.offset_C=offset_C.astype(dtype)#units of e/Ec=160[fmF]/Ec[microeV]
-            
+
         self.Ec=Ec #units of eV
         self.N=N
         self.n0=n0.astype(dtype) #units of number of electrons
@@ -188,8 +188,8 @@ class CBTmain: #just does the simulation, no further analysis
         self.q0=q0
         if iterable(U):
             self.number_of_Us=len(U)
-            
-            
+
+
         else:
             if self.parallelization !='non':
                 print('voltage is a scalar; setting parallelization to non, since parallelization is not possible')
@@ -202,7 +202,7 @@ class CBTmain: #just does the simulation, no further analysis
         self.Gt=Gt
         self.dtype=dtype
         self.factor_SI=e_SI/(self.N*self.Ec*self.Gt)
-        
+
         d1=np.concatenate((self.Cs,np.zeros((1,))))
         dm1=np.concatenate((self.Cs,np.zeros((1,))))
         d2=np.concatenate((self.second_order_C[0:-1],np.zeros((2,))))
@@ -225,7 +225,7 @@ class CBTmain: #just does the simulation, no further analysis
         self.now=str(datetime.now()).replace(':','.')
         print('running '+str(number_of_concurrent)+'simulations initiated after a transient period of'+str(Ntransient)+'steps. This is done for '+str(self.number_of_Us)+' voltages, that are run in "internal" batches of size '+str(batchsize)+'.')
         total=number_of_concurrent*self.number_of_Us
-        
+
         print('The total number of simulations (that gives rise to a datapoint for current) is: '+str(total))
         a=time()
         if (self.parallelization=='internal'):
@@ -252,7 +252,7 @@ class CBTmain: #just does the simulation, no further analysis
                 print('batchsize is one, but parallization is True, so all voltages a run. To run one at a time, use paralization="non"')
                 self.update_number_of_concurrent(number_of_concurrent)
                 self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
-            
+
         elif (self.parallelization=='non'):
             if batchsize>1:
                 print('parallization set to non; batchsize doesnt have any effect')
@@ -262,7 +262,7 @@ class CBTmain: #just does the simulation, no further analysis
             else:
                 voltages=np.array(self.U)
                 self.number_of_Us=1
-                
+
                 self.dQps=[]
                 self.dtps=[]
                 for V in voltages:
@@ -271,7 +271,7 @@ class CBTmain: #just does the simulation, no further analysis
                     self.__call__(number_of_steps=Nruns,transient=transient,print_every=Ninterval,number_of_concurrent=number_of_concurrent,skip_transient=skip_transient)
                     self.dQps.append(self.dQp)
                     self.dtps.append(self.dtp)
-            
+
         elif (self.parallelization=='external'):
             self.number_of_concurrent=number_of_concurrent #otherwise it never gets to be an attribute since __call__ is called inside joblib
             voltages=np.array(self.U)
@@ -284,7 +284,7 @@ class CBTmain: #just does the simulation, no further analysis
                         print('number of Us is not divisible into batches of size '+str(batchsize)+'. This is handled by having the last batch size being: '+str(len(voltbatch[-1])))
                 print('the total number of tasks that will run be run by the joblib module is ' +str(len(voltbatch)))
                 self.voltbatch=voltbatch
-            
+
             def f_scalar(V):
                 self.U=V
                 self.number_of_Us=1
@@ -316,7 +316,7 @@ class CBTmain: #just does the simulation, no further analysis
 
     def update_number_of_concurrent(self,number_of_concurrent):
         """
-        
+
 
         Parameters
         ----------
@@ -336,7 +336,7 @@ class CBTmain: #just does the simulation, no further analysis
         self.BB=np.array(self.BB,dtype=self.dtype)
         if iterable(self.U)==False:
             C=np.einsum('ij,ij->j',self.MMM_withoutU,self.B_withoutU)/2
-            
+
             self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor
             self.boundary_works=self.U/(2*self.Ec)
             self.gi=np.tile(self.Cs,int(len(self.dE0)/self.N))
@@ -353,10 +353,10 @@ class CBTmain: #just does the simulation, no further analysis
             self.dE0=C+bound
         # else:
         #     print(str(self.parallelization)+' is not implemented as a value for the parameter parallelization')
-            
+
     def dE_f(self,nn):
         """
-        
+
 
         Parameters
         ----------
@@ -380,7 +380,7 @@ class CBTmain: #just does the simulation, no further analysis
         return E
     def update_transition_rate(self,n1):
         """
-        
+
 
         Parameters
         ----------
@@ -442,11 +442,11 @@ class CBTmain: #just does the simulation, no further analysis
             self.gammas3=Gamma.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
             return self.gammas
 
-        else:
-            print('something is wrong with the dimensions of energy difference')
+        # else:
+        #     print('something is wrong with the dimensions of energy difference')
     def P(self,n,update=False):
         """
-        
+
 
         Parameters
         ----------
@@ -461,18 +461,18 @@ class CBTmain: #just does the simulation, no further analysis
 
         """
         try:
-            
+
             p=self.gammas2
         except Exception:
             p=self.update_transition_rate(n).reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
-            
+
         self.p=np.einsum('ij,i->ij',p,1/self.Gamsum)
 
         return self.p
 
     def dt_f(self):
         """
-        
+
 
         Returns
         -------
@@ -485,7 +485,7 @@ class CBTmain: #just does the simulation, no further analysis
         return self.dts
     def dQ_f(self):
         """
-        
+
 
         Returns
         -------
@@ -495,12 +495,12 @@ class CBTmain: #just does the simulation, no further analysis
 
         self.dQ=-(e_SI/self.N)*self.Gamdif/self.Gamsum
         return self.dQ
-            
+
     def multistep(self,store_data=False):
         """
-        
+
         Take one monte carlo step for each parallel charge configuation.
-        
+
         Parameters
         ----------
         store_data : bool, optional
@@ -527,7 +527,7 @@ class CBTmain: #just does the simulation, no further analysis
             # self.indices=list(self.indices)
             n_new=neff+self.MM[:,self.indices]
             self.ns=n_new
-            
+
         except FloatingPointError:
             print('FloatingPointError Occurred; trying to redo step. This may occur when the sum of the transition rates is very small. In this case, the sums are: '+str(self.Gamsum)+". However, I think the bug causing this is gone now.")
             print(np.sum(self.p,axis=1))
@@ -536,10 +536,10 @@ class CBTmain: #just does the simulation, no further analysis
             n_new=neff+self.MM[:,self.indices]#[:,:,0]
             self.ns=n_new
             self.multistep()
-    
+
     def __call__(self,number_of_steps=1,transient=0,print_every=None,number_of_concurrent=None,skip_transient=True):
         """
-        
+
 
         Parameters
         ----------
@@ -552,13 +552,13 @@ class CBTmain: #just does the simulation, no further analysis
         number_of_concurrent : int, optional
             number of charge configurations to run in parallel. The default is None.
         skip_transient : bool, optional
-            whether or not to skip data storing in the transient regime (i.e. if False, no data points are skipped and 
+            whether or not to skip data storing in the transient regime (i.e. if False, no data points are skipped and
             all charge configurations are launched from the charge confiiguration provided as input). The default is True.
 
         Returns
         -------
-        runs the simulation. Depending on the parallelization scheme, the main results in the form of charge 
-        transfer and trnsition times are either stored in the attribuute Is, or dQp and dtp together; 
+        runs the simulation. Depending on the parallelization scheme, the main results in the form of charge
+        transfer and trnsition times are either stored in the attribuute Is, or dQp and dtp together;
         this is handled automatically by inserting the resulting object into an instance of CBT_data_analysis.
 
         """
@@ -587,16 +587,16 @@ class CBTmain: #just does the simulation, no further analysis
             print('n0 is being moved forward through the transient window')
 
             self.update_number_of_concurrent(1)
-            
+
             self.ns=np.array([self.n0]*self.number_of_Us).T
             print('initiating multistep for the transient window for '+str(self.number_of_concurrent)+' charge configurations to move through the transient regime')
             for j in np.arange(transient*print_every):
                 if j%print_every==print_every-1:
                     print('transient {:.1f}'.format(j*100/(transient*print_every))+' pct.')
                 self.multistep(store_data=False)
-                
+
             # self.n0=np.array(self.n)
-            
+
             del self.gammas
             del self.p
         else:
@@ -614,26 +614,26 @@ class CBTmain: #just does the simulation, no further analysis
             if print_every != 0:
                 if i%print_every==print_every-1:
                     print('{:.1f}'.format(i*100/number_of_steps)+' pct.')
-        
+
                     self.multistep(store_data=True)
                 else:
                     self.multistep(store_data=False)
             else:
                 self.multistep(store_data=False)
         print('done')
-        
+
 
 
 
 class CBT_data_analysis:
     def __init__(self,CBTmain_instance,transient=None):
         """
-        This class processes the raw data. The main results are the attributes 
+        This class processes the raw data. The main results are the attributes
         Gsm: the mean conductance for each voltage
         Gstd: the standard deviation of the conductance at each voltage
         Gs: The conductance data points
-        
-        
+
+
 
         Parameters
         ----------
@@ -645,7 +645,7 @@ class CBT_data_analysis:
         Returns
         -------
         None.
-        
+
 
         """
         CBT=CBTmain_instance #shorthandname
@@ -654,8 +654,8 @@ class CBT_data_analysis:
         self.simulation_time=CBT.simulation_time
         self.filepath=os.getcwd()+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)
         self.q0=CBT.q0
-        
-            
+
+
         if transient is None:
             if CBT.skip_transient:
                 transient=0
@@ -677,7 +677,7 @@ class CBT_data_analysis:
                     dt1=np.array(i2).reshape(number_of_time_steps_with_data,batchlengths[j],nc)
                     dQ1=np.array(dQ1).swapaxes(1,0)
                     dt1=np.array(dt1).swapaxes(1,0)
-                    
+
                     dQ[sum(batchlengths[0:j]):sum(batchlengths[0:j+1]),...]=dQ1
                     dt[sum(batchlengths[0:j]):sum(batchlengths[0:j+1]),...]=dt1
                 self.dQ=dQ
@@ -688,7 +688,7 @@ class CBT_data_analysis:
                 Us=CBT.U
                 number_of_time_steps_with_data=len(CBT.dQp)
                 nc=CBT.number_of_concurrent
-                
+
                 self.dQ=np.array(CBT.dQp).reshape(number_of_time_steps_with_data,len(Us),nc).swapaxes(1,0)
                 self.dt=np.array(CBT.dtp).reshape(number_of_time_steps_with_data,len(Us),nc).swapaxes(1,0)
             else:
@@ -706,7 +706,7 @@ class CBT_data_analysis:
                     dt1=np.array(i2).reshape(number_of_time_steps_with_data,batchlengths[j],nc)
                     dQ1=np.array(dQ1).swapaxes(1,0)
                     dt1=np.array(dt1).swapaxes(1,0)
-                    
+
                     dQ[sum(batchlengths[0:j]):sum(batchlengths[0:j+1]),...]=dQ1
                     dt[sum(batchlengths[0:j]):sum(batchlengths[0:j+1]),...]=dt1
                 self.dQ=dQ
@@ -723,7 +723,7 @@ class CBT_data_analysis:
                     dt1=np.array(i2).reshape(number_of_time_steps_with_data,1,nc)
                     dQ1=np.array(dQ1).swapaxes(1,0)
                     dt1=np.array(dt1).swapaxes(1,0)
-                    
+
                     dQ[j:j+1,...]=dQ1
                     dt[j:j+1,...]=dt1
                 self.dQ=dQ
@@ -734,14 +734,14 @@ class CBT_data_analysis:
         self.points=int(len(self.currentsm)/2)
         points=self.points
         Us=CBT.U
-        
+
         self.Gs=(self.currents[points:2*points,:]-self.currents[0:points,:])/np.array([(Us[points:2*points]-Us[0:points])]).repeat(len(self.currents[0,:]),axis=0).T
         self.Gsm=np.sum(self.Gs,axis=1)/len(self.Gs[0,:])
         self.Gstd=np.std(self.Gs,axis=1)
         self.dV=Us[points:2*points]-Us[0:points]
     def CBT_model_g(self,x):
         """
-        
+
 
         Parameters
         ----------
@@ -758,7 +758,7 @@ class CBT_data_analysis:
 
     def CBT_model_G(self,V):
         """
-        
+
 
         Parameters
         ----------
@@ -774,7 +774,7 @@ class CBT_data_analysis:
         return self.raw_data.Gt*(1-self.raw_data.Ec*self.CBT_model_g(V/(self.raw_data.N*kB*self.raw_data.T))/(kB*self.raw_data.T))
     def plotG(self,save=False):
         """
-        
+
 
         Parameters
         ----------
@@ -793,10 +793,10 @@ class CBT_data_analysis:
                                                                                                                                                       self.raw_data.Ninterval)+r'$\times$'+'datapoint)={}, runs/datapoint={}, transient interval={}'.format(self.raw_data.Nruns,self.raw_data.number_of_concurrent,self.raw_data.Ntransient))
 
         else:
-            
+
             plt.title('MC for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e, steps between samples={}, \n steps/(run'.format(self.raw_data.N,self.raw_data.T*1e3,self.raw_data.Ec*1e6,self.raw_data.Gt*1e6,self.raw_data.q0,
                                                                                                                                                                 self.raw_data.Ninterval)+r'$\times$'+'datapoint)={}, runs/datapoint={}, transient interval={}'.format(self.raw_data.Nruns,self.raw_data.number_of_concurrent,self.raw_data.Ntransient))
-        
+
         Us=self.raw_data.U
         Vs=(Us[points:2*points]+Us[0:points])/2
         for i in np.arange(len(self.Gs[0,:])):
@@ -820,9 +820,9 @@ class CBT_data_analysis:
         ax2.legend()
         plt.grid()
         plt.tight_layout()
-        
+
         if save==True:
-        
+
             filepath=os.getcwd()
             try:
                 fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance1.png')
@@ -835,7 +835,7 @@ class CBT_data_analysis:
                 fig2.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Conductance2.png')
     def plotI(self,save=False):
         """
-        
+
 
         Parameters
         ----------
@@ -854,7 +854,7 @@ class CBT_data_analysis:
         else:
             plt.title('MC for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e, steps between samples={}, \n steps/(run'.format(self.raw_data.N,self.raw_data.T*1e3,self.raw_data.Ec*1e6,self.raw_data.Gt*1e6,self.raw_data.q0,
                                                                                                                                                             self.raw_data.Ninterval)+r'$\times$'+'datapoint)={}, runs/datapoint={}, transient interval={}'.format(self.raw_data.Nruns,self.raw_data.number_of_concurrent,self.raw_data.Ntransient))
-            
+
         Us=self.raw_data.U
 
         for i in np.arange(len(self.currents[0,:])):
@@ -870,7 +870,7 @@ class CBT_data_analysis:
         else:
             plt.title('Results for N={}, T={:.1e} mK, Ec={:.1e} $\mu$eV, \n Gt={:.1e} $\mu$Si, q0={:.1e}e'.format(self.raw_data.N,self.raw_data.T*1e3,self.raw_data.Ec*1e6,self.raw_data.Gt*1e6,self.raw_data.q0))
 
-            
+
         ax2.errorbar(Us,self.currentsm,yerr=self.currentsstd,fmt='.',label='Monte Carlo simulation results (mean)')
         ax2.set_xlabel('bias voltage [V]')
         ax2.set_ylabel('Current [A]')
@@ -878,7 +878,7 @@ class CBT_data_analysis:
         plt.grid()
         plt.tight_layout()
         if save==True:
-        
+
             filepath=os.getcwd()
             try:
                 fig.savefig(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time)+'Current1.png')
@@ -892,10 +892,10 @@ class CBT_data_analysis:
         # self.CBTmain_instance=CBTmain_instance
     def savedata(self,filename=None,full_results=False):
         """
-        
+
         stores all the input parameters and outputs of the simulation in a folder
         which by default is the same as the folder in which the plots are stored.
-        
+
         Parameters
         ----------
         filename : str, optional
@@ -971,71 +971,79 @@ class CBT_data_analysis:
                                     Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
                                     now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
                                     number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
-                                    currentsm=self.currentsm,currentsstd=self.currentsstd,offset_C=self.raw_data.offset_C,
-                                    second_order_C=self.raw_data.second_order_C)
-    
+                                    currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C)
+        else:
+            print('saving data in: '+str(filename))
+            np.savez_compressed(filename,dQ=self.dQ,
+                                dt=self.dt,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
+                                N=self.raw_data.N,Nruns=self.raw_data.Nruns,Ninterval=self.raw_data.Ninterval,
+                                Ntransient=self.raw_data.Ntransient,q0=self.raw_data.q0,simulation_time=self.raw_data.simulation_time,
+                                now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
+                                number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd
+                                ,currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C)
+
 def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,Ninterval=1000,skip_transient=True,parallelization='external',
              n0=None,second_order_C=None,dtype='float64',offset_C=None,dC=0,n_jobs=2,batchsize=1,q0=0,split_voltage=True,dV=None,
              make_plots=False,save_plots=True,output='full',transient=10):
     """
-    
+
 
     Parameters
     ----------
     U : 1d array of floats
-        voltages at which to calculate teh conductance (not the current) using the monte carlo simulation. 
-        The simulation will actually be run for voltages shifted slightly relative to each value in order 
+        voltages at which to calculate teh conductance (not the current) using the monte carlo simulation.
+        The simulation will actually be run for voltages shifted slightly relative to each value in order
         to calculate the conductance as the derivative of the current.
-        
+
     T : float
         temperature in Kelvin.
-        
+
     Ec : float
         charging energy in eV.
-        
+
     Gt : float
-        tunneling conductance in units of 1/ohm. Note that this just scales the final result, 
+        tunneling conductance in units of 1/ohm. Note that this just scales the final result,
         so there is no need to run the simulation multible times if one wants to check the influence of this parameter.
-        
+
     N : int, optional
         number of islands in the CBT chain. The default is 100.
-        
+
     Nruns : int, optional
         number of monte carlo steps to be taken for each charge array. The default is 5000.
-        
+
     Ntransient : int, optional
         number of transient steps where no data is stored. This is just used to initialize the initial condition for each voltage. The default is 5000.
-        
+
     number_of_concurrent : int, optional
-        This corresponds to how many datapoints will end up being generated for each voltage. 
-        For a given voltage, each datapoint is generated by evolving from the same initial charge condition 
+        This corresponds to how many datapoints will end up being generated for each voltage.
+        For a given voltage, each datapoint is generated by evolving from the same initial charge condition
         which is found by evolving a single charge configuration through the transient regime. The default is 5.
-        
+
     Ninterval : int, optional
-        Number monte carlo steps between storing data for charge transfer and time. 
-        Nothing bad happens if it is too low since in the end only the 
-        average is used to calculate the current, whose variance is calculated 
-        from parallel runs, so the autocorrelation doesnt matter. 
-        The only thing that can happen is that a lot of redundant correlated 
+        Number monte carlo steps between storing data for charge transfer and time.
+        Nothing bad happens if it is too low since in the end only the
+        average is used to calculate the current, whose variance is calculated
+        from parallel runs, so the autocorrelation doesnt matter.
+        The only thing that can happen is that a lot of redundant correlated
         data is generated. The default is 1000.
-        
+
     skip_transient : bool, optional
-        Whether or not to skip the data saving of the initial transient steps. This should just be true unless one is 
+        Whether or not to skip the data saving of the initial transient steps. This should just be true unless one is
         interested in the odd behaviour of the transient regime or something. The default is True.
     parallelization : str, optional
-        "external": simulations for each voltage are run in parallel using the joblib library in batches of size given by the input batchsize. 
+        "external": simulations for each voltage are run in parallel using the joblib library in batches of size given by the input batchsize.
         "internal": simulations for each voltage are run in parallel by fancy numpy vectorization, but uses a for-loop to iiterate over batches.
         "non": for loop structure is used to iterate over voltages.
-        
+
         The only reason not to use "external" is if the jobliib library somehow fails or interferes with other code.
-        
+
         The default is 'external'.
     n0 : 1D-array of float of size N-1, optional
         initial charge configuration. The default is zeros.
     second_order_C : array of float, optional
         coupling between next to nearest neighbours. The default is zeros.
     dtype : str, optional
-        datatype of the arrays used in calculations; using float32 should be faster, but it raises a lot of floatingpointerrors, 
+        datatype of the arrays used in calculations; using float32 should be faster, but it raises a lot of floatingpointerrors,
         so it shouldnt be touched I think. The default is 'float64'.
     offset_C : 1D array of float, optional
         capacitances representing coupling of dots to external charges. The units are e/Ec. The default is just zeros.
@@ -1047,40 +1055,40 @@ def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,
         number of processes to run in parallel using 'internal' numpy vectorization. The default is 1.
     q0 : int, optional
         charge offset in units of e. The default is 0.
-        
+
     split_voltage : bool, optional
-        If True the voltages, are split so that two closely spaced data points replaces one of the input points. 
+        If True the voltages, are split so that two closely spaced data points replaces one of the input points.
         This is done to calculate the local differential more precisely. The default is True.
     dV : float, optional
-        differential voltage used in the calculation of the conductance from the current data. 
-        A low value increases the uncertainty of the conductance datapoints a lot, 
+        differential voltage used in the calculation of the conductance from the current data.
+        A low value increases the uncertainty of the conductance datapoints a lot,
         but a high value induces a systematic uncertainty. The default is 50 times smaller than the FWHM of the first order model.
-        
+
     make_plots : bool, optional
         If true, the conductance and current data is plotted in the end. The default is False.
     save_plots : bool, optional
         Whether or not to save the plots. The default is True.
     output : str, optional
         The final output. The default is 'full', which yelds a results object containing everything.
-        If not everything is needed, one may choose to just output the mean conductances, 
+        If not everything is needed, one may choose to just output the mean conductances,
         or smething else from the list: ['full','G_mean, G_std','I_mean, I_std','G','I']
     transient : int, optional
         The number of additional steps to skip in the arrays of charge transfers and transition times in the current calculation apart from the ones already skipped during the simulation
     Raises
     ------
     Exception
-        If the specified output parameter is not understood, an exception is raised before running the simulation, 
+        If the specified output parameter is not understood, an exception is raised before running the simulation,
         so that the mistake can be corrected before starting the simulation in vain.
 
     Returns
     -------
     result object
-        if output is "full": a results object is generated whose main attrubutes 
-        of interest are Gsm yielding the mean conductances (one value for each input voltage) and 
+        if output is "full": a results object is generated whose main attrubutes
+        of interest are Gsm yielding the mean conductances (one value for each input voltage) and
         Gstd yielding the standard deviations of the conductances (not the standard deviations of the means).
 
     """
-    
+
     outputs=['full','G_mean, G_std','I_mean, I_std','G','I']
     if output not in outputs:
         print('output parameter must be one of '+str(outputs))
@@ -1120,7 +1128,7 @@ def carlo_CBT(U,T,Ec,Gt,N=100,Nruns=5000,Ntransient=5000,number_of_concurrent=5,
             result.plotG(save=save_plots)
             result.plotI(save=save_plots)
         if output=='full':
-            
+
             return result
         elif output=='G_mean':
             return result.Gsm
@@ -1140,7 +1148,7 @@ def chi(a,b,delta):
 
 def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,Nruns=30000,Ninterval=10,Ntransient=300000,n_jobs=2,number_of_concurrent=20,parallelization='external',
               q0=0,dV=None,batchsize=10,transient=500,offset_C=None,dC=0,second_order_C=None,plot=True,filename=None,p0=None,save=True,save_fig_folder=None):
-        
+
 
 
         if V_data_std is None:
@@ -1210,29 +1218,29 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
         wacky_sigma=interp1d(V,std_conductance,kind='linear',bounds_error=False,fill_value=(np.mean(std_conductance[0:5]),np.mean(std_conductance[-5::])))
         def CBT_model_g(x):
             """
-            
-    
+
+
             Parameters
             ----------
             x : floats
                 unitsless variable.
-    
+
             Returns
             -------
             function used in CBT model
-    
-    
+
+
             """
             return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
         def f0(V,Ec,Gt,V0,T):
-            
+
             return Gt*(1-(Ec/(kB*T))*CBT_model_g((V_data-V0)/(N*kB*T)))
         if p0 is None:
             p0=[4e-6,2.16e-5,0,30e-3]
         par0,cov0=curve_fit(f0,V_data,G_data,p0=p0)
         def f(V,Ec,Gt,V0):
             return Gt*model((V-V0)/Ec)
-                
+
         p_model=[par0[0],par0[1],par0[2]]
         error_check=True
         number_of_tries=0
@@ -1240,7 +1248,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
         while error_check==True:
             number_of_tries+=1
             try:
-                
+
                 par,cov=curve_fit(f,V_data,G_data,p0=p_model,sigma=wacky_sigma(V_data))
                 print(par)
                 G_MC=f(V_data,*par)
@@ -1260,7 +1268,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                     plt.ylabel('conductance [Si]')
                     plt.xlabel('Bias voltage [V]')
                     plt.tight_layout()
-                    
+
                     plt.legend(loc=3)
                     if save:
                         if filename is None:
@@ -1269,20 +1277,20 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                             except FileNotFoundError:
                                 os.mkdir(res.filepath)
                                 fig.savefig(res.filepath+'Chi_sq_plot1.png')
-                                
+
                             res.savedata()
                         else:
                             if save_fig_folder is None:
                                 fig.savefig(os.getcwd()+'Chi_sq_plot1.png')
                             else:
                                 fig.savefig(save_fig_folder+'Chi_sq_plot1.png')
-                        
+
                     fig=plt.figure(figsize=(11,6))
                     plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
                     plt.title('Best MC Fit parameters for u={:.2f}, <$q_0^2$>={:.2f}e: '.format(u,np.mean(q0**2))+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV'.format(1e6*par[0]))
                     # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                     plt.errorbar(V*par[0]/Ec0+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2/n={:.1f}$'.format(chi_model/len(V_data)),fmt='.')
-    
+
                     #plt.plot(V_data,res.CBT_model_G((V_data-par[2])/par[0])*par[1],label='1st order result for same parameters as the MC')
                     plt.plot(V_data,f0(V_data,*par0),label='1st order result for optimal first order parameters: T={:.1f}mK'.format(1e3*par0[3]))
                     plt.legend(loc=3)
@@ -1304,7 +1312,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                             except FileNotFoundError:
                                 os.mkdir(res.filepath)
                                 fig.savefig(res.filepath+'Chi_sq_plot.png')
-                                
+
                             res.savedata()
                         else:
                             if save_fig_folder is None:
@@ -1312,7 +1320,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                             else:
                                 fig.savefig(save_fig_folder+'Chi_sq_plot.png')
 
-                    
+
                 error_check=False
             except RuntimeError:
                 print('The least square optimizer did not converge for these parameters')
@@ -1345,13 +1353,13 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
         else:
             fit_result=fit_results()
         return fit_result
-            
+
 
 #%%
 if __name__=='__main__': #runs only if the file is being run explicitly
     pass
     ###################################################For testing########################################
-    
+
     N=100 #Number of islands
     Ec=4e-6 #Charging energy in units of eV
     Gt=2e-5 #Large voltage asymptotic conductance (affects noly the scaling of the result)
@@ -1359,15 +1367,15 @@ if __name__=='__main__': #runs only if the file is being run explicitly
     FWHM=5.439*kB*T*N #Full width half max according to the first order model
 
     points=101 #number of voltages to run the simulation for
-    lim=3*FWHM 
+    lim=3*FWHM
     V=np.linspace(-lim,lim,points)
-    
-    
+
+
     ####Run main simulation####
     print('runing example')
     #res=carlo_CBT(V,T,Ec,Gt,N=100,Nruns=2000,Ninterval=10,Ntransient=10000,n_jobs=2,parallelization='internal',number_of_concurrent=15)
     print('finished running example')
-    
+
     # ####store main results###
     # print('making plots')
     # mean_conductances=res.Gsm #mean conductance
@@ -1397,7 +1405,7 @@ if __name__=='__main__':
     offset_C=0*np.ones((N-1,))/4
     res2=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
                   parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
-    
+
     offset_C=np.ones((N-1,))/4
     res3=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
                   parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
@@ -1414,7 +1422,7 @@ if __name__=='__main__':
     dC=0*np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
     res6=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
                   parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
-                                
+
     np.seterr(all = 'warn')
     plt.figure(figsize=(11,6))
     V=np.linspace(-5,5,points)
@@ -1426,7 +1434,7 @@ if __name__=='__main__':
     plt.errorbar(V,res6.Gsm,yerr=res5.Gstd,label='with q0=+1/2')
     Vs=np.linspace(-lim,lim,12000)
     plt.plot(Vs/(5.439*N),res.CBT_model_G(Vs),label='first order approximation',linewidth=3)
-    
+
     plt.plot([0],[1-u/6+u**2/60-u**3/630],'o',label='third order prediction for the minimum')
     plt.xlabel('Voltage [$FWHM_0$]')
     plt.ylabel('G/$G_T$')
@@ -1464,7 +1472,7 @@ if __name__=='__main__':
     dC=0
     res4=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
                   parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
-    res4.plotG()   
+    res4.plotG()
     dC=np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
     u=5
     res5=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
@@ -1473,7 +1481,7 @@ if __name__=='__main__':
     dC=0
     res6=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
                   parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
-                                
+
     res6.plotG()
     np.seterr(all = 'warn')
     plt.figure(figsize=(11,6))
@@ -1486,7 +1494,7 @@ if __name__=='__main__':
     plt.errorbar(V,res6.Gsm,yerr=res5.Gstd,label='u=5, dC zero')
     Vs=np.linspace(-lim,lim,12000)
     # plt.plot(Vs/(5.439*N),res5.CBT_model_G(Vs),label='first order approximation u={:.1f}'.format(res5.raw_data.u),linewidth=3)
-    
+
     # plt.plot([0],[1-u/6+u**2/60-u**3/630],'o',label='third order prediction for the minimum')
     plt.xlabel('Voltage [$FWHM_0$]')
     plt.ylabel('G/$G_T$')

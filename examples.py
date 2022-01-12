@@ -18,7 +18,7 @@ Gt=2.16e-5 #Large voltage asymptotic conductance (affects noly the scaling of th
 T=0.020 #Temperature in Kelvin
 FWHM=5.439*kB*T*N #Full width half max according to the first order model
 points=101 #number of voltages to run the simulation for
-lim=1.5*FWHM 
+lim=1.5*FWHM
 V=np.linspace(-lim,lim,points)
 
 
@@ -41,7 +41,7 @@ def load_data(idd_0,idd_1):
         dGs=[]
         voltages=[]
         currents=[]
-        
+
         # idd_0=1954
         # idd_1=1956
         idds=np.array(range(idd_0,idd_1+1))
@@ -57,7 +57,7 @@ def load_data(idd_0,idd_1):
         except FileNotFoundError:
             from qcodes.dataset.data_set import load_by_id #throws error if qcodes is not activated
             for j in np.arange(idd_0,idd_1+1):
-        
+
                 # idd_1=211
                 current=load_by_id(j).get_parameter_data()['Ithaco']['Ithaco']
                 dG=load_by_id(j).get_parameter_data()['Conductance']['Conductance']
@@ -89,15 +89,15 @@ def load_data(idd_0,idd_1):
         voltages_av=np.mean(voltages,axis=0)
         dGs_av=np.mean(dGs,axis=0)
         currents_av=np.mean(currents,axis=0)
-        
+
         currents_std=np.std(currents,axis=0)/np.sqrt(len(idds))
         voltages_std=np.std(voltages,axis=0)/np.sqrt(len(idds))
         dGs_std=np.std(dGs,axis=0)/np.sqrt(len(idds))
-        
+
         voltages_av=voltages_av[dGs_std>0]
         dGs_av=dGs_av[dGs_std>0]
         currents_av=currents_av[dGs_std>0]
-        
+
         currents_std=currents_std[dGs_std>0]
         voltages_std=voltages_std[dGs_std>0]
         dGs_std=dGs_std[dGs_std>0]
@@ -105,7 +105,7 @@ def load_data(idd_0,idd_1):
         voltages_av=voltages_av[start::]
         dGs_av=dGs_av[start::]
         currents_av=currents_av[start::]
-        
+
         currents_std=currents_std[start::]
         voltages_std=voltages_std[start::]
         dGs_std=dGs_std[start::]
@@ -113,7 +113,7 @@ def load_data(idd_0,idd_1):
     except KeyError:
         voltages=[]
         currents=[]
-        
+
         # idd_0=1954
         # idd_1=1956
         idds=np.array(range(idd_0,idd_1+1))
@@ -127,7 +127,7 @@ def load_data(idd_0,idd_1):
         except FileNotFoundError:
             from qcodes.dataset.data_set import load_by_id
             for j in np.arange(idd_0,idd_1+1):
-        
+
                 # idd_1=211
                 current=load_by_id(j).get_parameter_data()['Ithaco']['Ithaco']
                 voltage=load_by_id(j).get_parameter_data()['Voltage']['Voltage']
@@ -157,7 +157,7 @@ def load_data(idd_0,idd_1):
         voltages_av=np.mean(voltages,axis=0)
 
         currents_av=np.mean(currents,axis=0)
-        
+
         currents_std=np.std(currents,axis=0)/np.sqrt(len(idds))
         voltages_std=np.std(voltages,axis=0)/np.sqrt(len(idds))
 
@@ -166,7 +166,7 @@ def load_data(idd_0,idd_1):
         voltages_av=voltages_av[start::]
 
         currents_av=currents_av[start::]
-        
+
         currents_std=currents_std[start::]
         voltages_std=voltages_std[start::]
 
@@ -201,7 +201,7 @@ Gt=2.16e-5 #Large voltage asymptotic conductance (affects noly the scaling of th
 T=0.020 #Temperature in Kelvin
 FWHM=5.439*kB*T*N #Full width half max according to the first order model
 points=101 #number of voltages to run the simulation for
-lim=1.5*FWHM 
+lim=1.5*FWHM
 # V=np.linspace(-lim,lim,points)
 V=voltages_av[400:1100][::10]
 G_data=dGs_av[400:1100][::10]
@@ -234,13 +234,13 @@ for Ec,T in combinations:
     G=np.linspace(2e-5,3e-5,5000)
     for i in np.arange(len(G)):
         chi_squares.append(np.sum((G_data-G[i]*mean_conductances/Gt)**2/(G[i]*std_conductance/Gt)**2))
-    
+
     chi_min=min(chi_squares)
     index_min=chi_squares.index(chi_min)
     G_min=G[index_min]
     print('G_min: '+str(G_min))
     chi_squares=np.array(chi_squares)
-    
+
     fig,ax=plt.subplots()
     ax.plot(G,chi_squares,label='$\chi^2_0={:.1f}'.format(chi_min))
     ax.set_ylabel(r'$\chi^2$')
@@ -263,7 +263,7 @@ N=100 #Number of islands
 # T=0.020 #Temperature in Kelvin
 # FWHM=5.439*kB*T*N #Full width half max according to the first order model
 points=131 #number of voltages to run the simulation for
-# lim=1.5*FWHM 
+# lim=1.5*FWHM
 # V=np.linspace(-lim,lim,points)
 V_data=voltages_av#[300:1200]
 V_data_std=voltages_std#[300:1200]
@@ -302,22 +302,22 @@ for u in unitless_u:
         second_order_C=np.ones((N,))/10
         res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
                       parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
-    
-    
+
+
         ####store main results###
         mean_conductances=res.Gsm #mean conductance
         std_conductance=res.Gstd #standard deviation of conductance
         mean_currents=res.currentsm #mean currents
         model=interp1d(V,mean_conductances,kind='linear',bounds_error=False,fill_value=(np.mean(mean_conductances[0:3]),np.mean(mean_conductances[-3::])))
         wacky_sigma=interp1d(V,std_conductance,kind='linear',bounds_error=False,fill_value=(np.mean(std_conductance[0:3]),np.mean(std_conductance[-3::])))
-        
+
         def f0(V,Ec,Gt,V0,T):
             return Gt*(1-(Ec/(kB*T))*res.CBT_model_g((V_data-V0)/(N*kB*T)))
         p0=[4e-6,2.16e-5,0,30e-3]
         par0,cov0=curve_fit(f0,V_data,G_data,p0=p0)
         def f(V,Ec,Gt,V0):
             return Gt*model((V-V0)/Ec)
-                
+
         p_model=[par0[0],par0[1],par0[2]]
         error_check=True
         number_of_tries=0
@@ -325,7 +325,7 @@ for u in unitless_u:
         while error_check==True:
             number_of_tries+=1
             try:
-                
+
                 par,cov=curve_fit(f,V_data,G_data,p0=p_model,sigma=wacky_sigma(V_data))
                 print(par)
                 G_MC=f(V_data,*par)
@@ -340,14 +340,14 @@ for u in unitless_u:
                 plt.ylabel('conductance [Si]')
                 plt.xlabel('Bias voltage [V]')
                 plt.tight_layout()
-                
+
                 plt.legend(loc=3)
                 try:
                     fig.savefig(res.filepath+'Chi_sq_plot1.png')
                 except FileNotFoundError:
                     os.mkdir(res.filepath)
                     fig.savefig(res.filepath+'Chi_sq_plot1.png')
-                    
+
                 fig=plt.figure(figsize=(11,6))
                 plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
                 plt.title('Best MC Fit parameters for u={:.2f}, q0="uniformly distributed": '.format(u)+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV'.format(1e6*par[0]))
@@ -365,7 +365,7 @@ for u in unitless_u:
                 except FileNotFoundError:
                     os.mkdir(res.filepath)
                     fig.savefig(res.filepath+'Chi_sq_plot.png')
-                    
+
                 res.savedata()
                 res.plotG()
                 error_check=False
@@ -396,7 +396,7 @@ for u in unitless_u:
         # dC=0
         # res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
         #               parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC)
-    
+
         # ####store main results###
         # mean_conductances=res.Gsm #mean conductance
         # std_conductance=res.Gstd #standard deviation of conductance
@@ -405,7 +405,7 @@ for u in unitless_u:
         # wacky_sigma=interp1d(V,std_conductance,kind='linear',bounds_error=False,fill_value=(np.mean(std_conductance[0:3]),np.mean(std_conductance[-3::])))
         # def f(V,Ec,Gt,V0):
         #     return Gt*model((V-V0)/Ec)
-        
+
         # p_model=[par0[0],par0[1],par0[2]]
         # error_check=True
         # number_of_tries=0
@@ -413,7 +413,7 @@ for u in unitless_u:
         # while error_check==True:
         #     number_of_tries+=1
         #     try:
-                
+
         #         par,cov=curve_fit(f,V_data,G_data,p0=p_model,sigma=V_data_std)
         #         print(par)
         #         G_MC=f(V_data,*par)
@@ -429,7 +429,7 @@ for u in unitless_u:
         #         plt.ylabel('conductance [Si]')
         #         plt.xlabel('Bias voltage [V]')
         #         plt.tight_layout()
-                
+
         #         plt.legend(loc=3)
         #         try:
         #             fig.savefig(res.filepath+'Chi_sq_plot1.png')
@@ -455,7 +455,7 @@ for u in unitless_u:
         #         except FileNotFoundError:
         #             os.mkdir(res.filepath)
         #             fig.savefig(res.filepath+'Chi_sq_plot.png')
-                    
+
         #         res.savedata()
         #         res.plotG()
         #         error_check=False
@@ -487,14 +487,14 @@ dirpaths=list()
 models=list()
 pars=list()
 for (dirpath, dirnames, filenames) in os.walk(path_to_data):
-    
-    npz_files = list(filter(lambda x: x[-4:] == '.npz', filenames)) 
+
+    npz_files = list(filter(lambda x: x[-4:] == '.npz', filenames))
     print(npz_files)
     if len(npz_files) is not 0:
         all_files += npz_files
         dirname+=dirnames
         dirpaths+=[dirpath+'\\']
-    
+
         fit_result=fit_carlo(V_data,G_data, filename=os.path.join(dirpath,npz_files[0]),plot=False,save_fig_folder=dirpath+'\\')
         if np.mean(fit_result.offset_C)>0:
             models.append((fit_result.model,fit_result.u))
@@ -534,5 +534,5 @@ def ff(V_experiment,u):
         return Gt*model((V-V0)/Ec)
     p0=[4e-6,2.16e-5,0]
     par,cov=curve_fit(f,V_data,G_data,p0=p0,sigma=std_conductance)
-    
+
     return
