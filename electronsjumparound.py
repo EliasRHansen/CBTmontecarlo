@@ -1141,7 +1141,73 @@ def chi(a,b,delta):
 
 def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,Nruns=30000,Ninterval=10,Ntransient=300000,n_jobs=2,number_of_concurrent=20,parallelization='external',
               q0=0,dV=None,batchsize=10,transient=500,offset_C=None,dC=0,second_order_C=None,plot=True,filename=None,p0=None,save=True,save_fig_folder=None):
-        
+        """
+    
+
+    Parameters
+    ----------
+    V_data : TYPE
+        DESCRIPTION.
+    G_data : TYPE
+        DESCRIPTION.
+    u : TYPE, optional
+        DESCRIPTION. The default is None.
+    V_data_std : TYPE, optional
+        DESCRIPTION. The default is None.
+    G_data_std : TYPE, optional
+        DESCRIPTION. The default is None.
+    V : TYPE, optional
+        DESCRIPTION. The default is None.
+    N : TYPE, optional
+        DESCRIPTION. The default is 100.
+    Nruns : TYPE, optional
+        DESCRIPTION. The default is 30000.
+    Ninterval : TYPE, optional
+        DESCRIPTION. The default is 10.
+    Ntransient : TYPE, optional
+        DESCRIPTION. The default is 300000.
+    n_jobs : TYPE, optional
+        DESCRIPTION. The default is 2.
+    number_of_concurrent : TYPE, optional
+        DESCRIPTION. The default is 20.
+    parallelization : TYPE, optional
+        DESCRIPTION. The default is 'external'.
+    q0 : TYPE, optional
+        DESCRIPTION. The default is 0.
+    dV : TYPE, optional
+        DESCRIPTION. The default is None.
+    batchsize : TYPE, optional
+        DESCRIPTION. The default is 10.
+    transient : TYPE, optional
+        DESCRIPTION. The default is 500.
+    offset_C : TYPE, optional
+        DESCRIPTION. The default is None.
+    dC : TYPE, optional
+        DESCRIPTION. The default is 0.
+    second_order_C : TYPE, optional
+        DESCRIPTION. The default is None.
+    plot : TYPE, optional
+        DESCRIPTION. The default is True.
+    filename : TYPE, optional
+        DESCRIPTION. The default is None.
+    p0 : TYPE, optional
+        DESCRIPTION. The default is None.
+    save : TYPE, optional
+        DESCRIPTION. The default is True.
+    save_fig_folder : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Raises
+    ------
+    Exception
+        DESCRIPTION.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    """
 
 
         if V_data_std is None:
