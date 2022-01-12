@@ -177,6 +177,7 @@ class CBTmain: #just does the simulation, no further analysis
         self.Ec=Ec #units of eV
         self.N=N
         self.n0=n0.astype(dtype) #units of number of electrons
+        self.dC=dC
         self.Cs=np.ones((N,),dtype=dtype)+dC #units of e/Ec=160 [fmF]/Ec[microeV]
         self.U=U #units of eV
         self.Nruns=Nruns
@@ -1167,6 +1168,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
             second_order_C=res.raw_data.second_order_C
             Ec0=res.raw_data.Ec
             Gt0=res.raw_data.Gt
+            
         else:
             print('loading data from file')
             data=np.load(filename)
@@ -1192,6 +1194,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
             print('loaded Ntransient='+str(Ntransient))
             number_of_concurrent=data['number_of_concurrent']
             print('loaded number_of_concurrent='+str(number_of_concurrent))
+            q0=data['q0']
             try:
                 dC=data['dC']
             except KeyError:
@@ -1328,7 +1331,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                     error_check=False
         class fit_results:
             def __init__(self,fig=None):
-                self.fit_model=f0
+                self.fit_model=f
                 self.par=par
                 self.wacky_sigma=wacky_sigma
                 self.chi_model=chi_model
@@ -1340,6 +1343,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                 self.N=N
                 self.dC=dC
                 self.model=model
+                self.q0=q0
         if plot:
             fit_result=fit_results(fig)
         else:
