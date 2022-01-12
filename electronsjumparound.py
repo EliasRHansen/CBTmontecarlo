@@ -918,7 +918,7 @@ class CBT_data_analysis:
                                         now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
                                         number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
                                         currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C,
-                                        second_order_C=self.raw_data.second_order_C)
+                                        second_order_C=self.raw_data.second_order_C,dC=self.raw_data.dC)
                 except FileNotFoundError:
                     filepath=os.getcwd()
                     os.mkdir(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time))
@@ -929,7 +929,7 @@ class CBT_data_analysis:
                                         now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
                                         number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
                                         currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C,
-                                        second_order_C=self.raw_data.second_order_C)
+                                        second_order_C=self.raw_data.second_order_C,dC=self.raw_data.dC)
             else:
                 print('saving data in: '+str(filename))
                 np.savez_compressed(filename,dQ=self.dQ,
@@ -939,7 +939,7 @@ class CBT_data_analysis:
                                     now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
                                     number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd
                                     ,currents=self.currents,currentsm=self.currentsm,currentsstd=self.currentsstd,Gs=self.Gs,offset_C=self.raw_data.offset_C,
-                                    second_order_C=self.raw_data.second_order_C)
+                                    second_order_C=self.raw_data.second_order_C,dC=self.raw_data.dC)
         else:
             if filename is None:
                 try:
@@ -952,7 +952,7 @@ class CBT_data_analysis:
                                         now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
                                         number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
                                         currentsm=self.currentsm,currentsstd=self.currentsstd,offset_C=self.raw_data.offset_C,
-                                        second_order_C=self.raw_data.second_order_C)
+                                        second_order_C=self.raw_data.second_order_C,dC=self.raw_data.dC)
                 except FileNotFoundError:
                     filepath=os.getcwd()
                     os.mkdir(filepath+'\\Results {}, sim time={:.1f}sec\\'.format(self.now,self.simulation_time))
@@ -963,7 +963,7 @@ class CBT_data_analysis:
                                         now=self.raw_data.now,parallelization=self.raw_data.parallelization,batchsize=self.raw_data.batchsize,
                                         number_of_concurrent=self.raw_data.number_of_concurrent,V=self.raw_data.U,Gsm=self.Gsm,Gstd=self.Gstd,
                                         currentsm=self.currentsm,currentsstd=self.currentsstd,offset_C=self.raw_data.offset_C,
-                                        second_order_C=self.raw_data.second_order_C)
+                                        second_order_C=self.raw_data.second_order_C,dC=self.raw_data.dC)
             else:
                 print('saving data in: '+str(filename))
                 np.savez_compressed(filename,T=self.raw_data.T,Gt=self.raw_data.Gt,Ec=self.raw_data.Ec,
@@ -1159,6 +1159,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
             print('running MC simulation for u='+str(u))
             res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=n_jobs,number_of_concurrent=number_of_concurrent,
                           parallelization=parallelization,q0=q0,dV=dV,batchsize=batchsize,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
+            res.savedata()
             ####store main results###
             mean_conductances=res.Gsm #mean conductance
             std_conductance=res.Gstd #standard deviation of conductance
@@ -1191,6 +1192,10 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
             print('loaded Ntransient='+str(Ntransient))
             number_of_concurrent=data['number_of_concurrent']
             print('loaded number_of_concurrent='+str(number_of_concurrent))
+            try:
+                dC=data['dC']
+            except KeyError:
+                print('dC was not saved, and cannot be loaded')
             if V is not None:
                 print('Using reloaded value for voltages instead of the provided values')
             Us=data['V']
@@ -1248,7 +1253,8 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                 if plot:
                     fig=plt.figure(figsize=(11,6))
                     plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
-                    plt.title('Best MC Fit parameters for u={:.2f}, <$q_0^2$>={:.2f}e: '.format(u,np.mean(q0**2))+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}, <$\delta C^2$>/C={:.2f}'.format(1e6*par[0],np.mean(offset_C),np.mean(dC**2))+r', <$C^{(2)}$>'+'/C={:.3f}'.format(np.mean(second_order_C)))
+                    plt.title('Best MC Fit parameters for u={:.2f}, <$q_0^2$>={:.2f}e: '.format(u,np.mean(q0**2))+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}, <$\delta C^2$>/C={:.2f}'.format(1e6*par[0],np.mean(offset_C),np.mean(dC**2))
+                              +r', <$C^{(2)}$>'+'/C={:.3f}'.format(np.mean(second_order_C)))
                     # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
                     plt.errorbar(V*par[0]/Ec0+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2/n={:.1f}$'.format(chi_model/len(V_data)),fmt='.')
                     plt.ylabel('conductance [Si]')
@@ -1307,7 +1313,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                                 fig.savefig(save_fig_folder+'Chi_sq_plot.png')
 
                     
-                    error_check=False
+                error_check=False
             except RuntimeError:
                 print('The least square optimizer did not converge for these parameters')
                 p_model[0]=p_model[0]+np.random.uniform(low=-1,high=1)*p_model[0]*1e-1
@@ -1321,17 +1327,23 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                     print('RuntimeError: leastq optimization failed for this run after  '+str(max_tries)+' number of tries')
                     error_check=False
         class fit_results:
-            def __init__(self,f0,par,wacky_sigma,chi_model,wacky_weight,fig=None):
+            def __init__(self,fig=None):
                 self.fit_model=f0
                 self.par=par
                 self.wacky_sigma=wacky_sigma
                 self.chi_model=chi_model
                 self.wacky_weight=wacky_weight
                 self.fig=fig
+                self.offset_C=offset_C
+                self.u=u
+                self.second_order_C=second_order_C
+                self.N=N
+                self.dC=dC
+                self.model=model
         if plot:
-            fit_result=fit_results(f0,par,wacky_sigma,chi_model,wacky_weight,fig)
+            fit_result=fit_results(fig)
         else:
-            fit_result=fit_results(f0,par,wacky_sigma,chi_model,wacky_weight)
+            fit_result=fit_results()
         return fit_result
             
 

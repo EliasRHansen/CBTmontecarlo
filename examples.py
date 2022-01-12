@@ -298,7 +298,7 @@ for u in unitless_u:
         Ntransient=300000
         transient=500
         offset_C=0*np.ones((N-1,))/10
-        dC=0#np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
+        =0#np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
         second_order_C=np.ones((N,))/10
         res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
                       parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
@@ -479,13 +479,43 @@ for u in unitless_u:
         plt.show()
         plt.close()
 #%%
-folder_with_results=os.getcwd()+'\\Results 2022-01-10 20.56.02.630781, sim time=1672.6sec\\'
-all_files = os.listdir(folder_with_results)
-npz_files = list(filter(lambda x: x[-4:] == '.npz', all_files)) 
+#folder_with_results='C:\\Users\\Elias Roos Hansen\\Documents\\Københavns uni\\qdev\\code\Runs with too much data'+'\\Results 2022-01-10 20.56.02.630781, sim time=1672.6sec\\'
+path_to_data='C:\\Users\\Elias Roos Hansen\\Documents\\Københavns uni\\qdev\\code\Runs with too much data'
+all_files = list()
+dirname=list()
+dirpaths=list()
+models=list()
+pars=list()
+for (dirpath, dirnames, filenames) in os.walk(path_to_data):
+    
+    npz_files = list(filter(lambda x: x[-4:] == '.npz', filenames)) 
+    print(npz_files)
+    if len(npz_files) is not 0:
+        all_files += npz_files
+        dirname+=dirnames
+        dirpaths+=[dirpath+'\\']
+    
+        fit_result=fit_carlo(V_data,G_data, filename=os.path.join(dirpath,npz_files[0]),plot=False,save_fig_folder=dirpath+'\\')
+        if np.mean(fit_result.offset_C)>0:
+            models.append((fit_result.model,fit_result.u))
+            pars.append(fit_result.par)
+    # plt.close()
+meanGts=np.mean([p[1] for p in pars])
+meanV0=np.mean([p[2] for p in pars])
+meanEc=np.mean([p[0] for p in pars])
+us=np.array([m[1] for m in models])
+Ts=meanEc/(kB*us)
 
-all_files = os.listdir(folder_with_results)
-fit_result=fit_carlo(V_data,G_data, filename=folder_with_results+npz_files[0],plot=True,save_fig_folder=folder_with_results)
-
+p0=[meanGts,us[0],0.1,meanV0,Ts[0]]
+def super_model(V,Gt,u0,sig,V0,T):
+    den=np.sum(np.array([np.exp(-(u-u0)**2/sig**2) for f,u in models]),axis=0)
+    sup=Gt*np.sum(np.array([np.exp(-(u-u0)**2/sig**2)*f((V-V0)/(u*kB*T)) for f,u in models]),axis=0)/den
+    return sup
+bounds=([0,us[0],0.01,np.min(V_data),0.001],[1e-3,us[-1],1,np.max(V_data),1])
+par,cov=curve_fit(super_model,V_data,G_data,p0=p0,bounds=bounds)
+plt.figure()
+plt.plot(V_data,G_data)
+plt.plot(V_data,super_model(V_data,*par))
 #%%
 
 def ff(V_experiment,u):
