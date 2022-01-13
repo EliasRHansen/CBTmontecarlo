@@ -177,6 +177,7 @@ class CBTmain: #just does the simulation, no further analysis
         self.Ec=Ec #units of eV
         self.N=N
         self.n0=n0.astype(dtype) #units of number of electrons
+        self.dC=dC
         self.Cs=np.ones((N,),dtype=dtype)+dC #units of e/Ec=160 [fmF]/Ec[microeV]
         self.U=U #units of eV
         self.Nruns=Nruns
@@ -1148,7 +1149,73 @@ def chi(a,b,delta):
 
 def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,Nruns=30000,Ninterval=10,Ntransient=300000,n_jobs=2,number_of_concurrent=20,parallelization='external',
               q0=0,dV=None,batchsize=10,transient=500,offset_C=None,dC=0,second_order_C=None,plot=True,filename=None,p0=None,save=True,save_fig_folder=None):
+        """
 
+
+    Parameters
+    ----------
+    V_data : TYPE
+        DESCRIPTION.
+    G_data : TYPE
+        DESCRIPTION.
+    u : TYPE, optional
+        DESCRIPTION. The default is None.
+    V_data_std : TYPE, optional
+        DESCRIPTION. The default is None.
+    G_data_std : TYPE, optional
+        DESCRIPTION. The default is None.
+    V : TYPE, optional
+        DESCRIPTION. The default is None.
+    N : TYPE, optional
+        DESCRIPTION. The default is 100.
+    Nruns : TYPE, optional
+        DESCRIPTION. The default is 30000.
+    Ninterval : TYPE, optional
+        DESCRIPTION. The default is 10.
+    Ntransient : TYPE, optional
+        DESCRIPTION. The default is 300000.
+    n_jobs : TYPE, optional
+        DESCRIPTION. The default is 2.
+    number_of_concurrent : TYPE, optional
+        DESCRIPTION. The default is 20.
+    parallelization : TYPE, optional
+        DESCRIPTION. The default is 'external'.
+    q0 : TYPE, optional
+        DESCRIPTION. The default is 0.
+    dV : TYPE, optional
+        DESCRIPTION. The default is None.
+    batchsize : TYPE, optional
+        DESCRIPTION. The default is 10.
+    transient : TYPE, optional
+        DESCRIPTION. The default is 500.
+    offset_C : TYPE, optional
+        DESCRIPTION. The default is None.
+    dC : TYPE, optional
+        DESCRIPTION. The default is 0.
+    second_order_C : TYPE, optional
+        DESCRIPTION. The default is None.
+    plot : TYPE, optional
+        DESCRIPTION. The default is True.
+    filename : TYPE, optional
+        DESCRIPTION. The default is None.
+    p0 : TYPE, optional
+        DESCRIPTION. The default is None.
+    save : TYPE, optional
+        DESCRIPTION. The default is True.
+    save_fig_folder : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Raises
+    ------
+    Exception
+        DESCRIPTION.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    """
 
 
         if V_data_std is None:
@@ -1175,6 +1242,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
             second_order_C=res.raw_data.second_order_C
             Ec0=res.raw_data.Ec
             Gt0=res.raw_data.Gt
+
         else:
             print('loading data from file')
             data=np.load(filename)
@@ -1200,6 +1268,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
             print('loaded Ntransient='+str(Ntransient))
             number_of_concurrent=data['number_of_concurrent']
             print('loaded number_of_concurrent='+str(number_of_concurrent))
+            q0=data['q0']
             try:
                 dC=data['dC']
             except KeyError:
@@ -1336,7 +1405,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                     error_check=False
         class fit_results:
             def __init__(self,fig=None):
-                self.fit_model=f0
+                self.fit_model=f
                 self.par=par
                 self.wacky_sigma=wacky_sigma
                 self.chi_model=chi_model
@@ -1348,6 +1417,7 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                 self.N=N
                 self.dC=dC
                 self.model=model
+                self.q0=q0
         if plot:
             fit_result=fit_results(fig)
         else:

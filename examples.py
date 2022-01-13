@@ -9,9 +9,11 @@ import numpy as np
 from electronsjumparound import carlo_CBT,fit_carlo
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
+import os
+
 kB=8.617*1e-5
 e_SI=1.602*1e-19
-
+#%%
 N=100 #Number of islands
 Ec=4.6e-6 #Charging energy in units of eV
 Gt=2.16e-5 #Large voltage asymptotic conductance (affects noly the scaling of the result)
@@ -298,7 +300,7 @@ for u in unitless_u:
         Ntransient=300000
         transient=500
         offset_C=0*np.ones((N-1,))/10
-        =0#np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
+        dC=0#np.random.uniform(low=-5e-1,high=5e-1,size=(N,))
         second_order_C=np.ones((N,))/10
         res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
                       parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient,offset_C=offset_C,dC=dC,second_order_C=second_order_C)
@@ -479,6 +481,29 @@ for u in unitless_u:
         plt.show()
         plt.close()
 #%%
+#store data
+us=np.linspace(0.1,3,30)
+lim=5.2*5.439*N
+points=131
+V=np.linspace(-lim,lim,points)
+number_of_concurrent=20
+q0=0
+n_jobs=2
+Nruns=30000
+Ninterval=10
+Ntransient=330000
+transient=500
+for u in us:
+    print(u)
+    res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient)
+    if u==us[0]:
+        res.plotG()#just to seee that it is working
+        plt.pause(0.05)
+        plt.show()
+    res.savedata()
+
+#%%
 #folder_with_results='C:\\Users\\Elias Roos Hansen\\Documents\\Københavns uni\\qdev\\code\Runs with too much data'+'\\Results 2022-01-10 20.56.02.630781, sim time=1672.6sec\\'
 path_to_data='C:\\Users\\Elias Roos Hansen\\Documents\\Københavns uni\\qdev\\code\Runs with too much data'
 all_files = list()
@@ -496,7 +521,8 @@ for (dirpath, dirnames, filenames) in os.walk(path_to_data):
         dirpaths+=[dirpath+'\\']
 
         fit_result=fit_carlo(V_data,G_data, filename=os.path.join(dirpath,npz_files[0]),plot=False,save_fig_folder=dirpath+'\\')
-        if np.mean(fit_result.offset_C)>0:
+        if (np.mean(fit_result.offset_C)==0) and (np.mean(fit_result.second_order_C)==0) and (np.mean(fit_result.q0)==0):
+            
             models.append((fit_result.model,fit_result.u))
             pars.append(fit_result.par)
     # plt.close()
@@ -506,16 +532,75 @@ meanEc=np.mean([p[0] for p in pars])
 us=np.array([m[1] for m in models])
 Ts=meanEc/(kB*us)
 
-p0=[meanGts,us[0],0.1,meanV0,Ts[0]]
-def super_model(V,Gt,u0,sig,V0,T):
-    den=np.sum(np.array([np.exp(-(u-u0)**2/sig**2) for f,u in models]),axis=0)
-    sup=Gt*np.sum(np.array([np.exp(-(u-u0)**2/sig**2)*f((V-V0)/(u*kB*T)) for f,u in models]),axis=0)/den
+def CBT_model_g(x):
+    """
+    
+
+    Parameters
+    ----------
+    x : floats
+        unitsless variable.
+
+    Returns
+    -------
+    function used in CBT model
+
+
+    """
+    return (x*np.sinh(x)-4*np.sinh(x/2)**2)/(8*np.sinh(x/2)**4)
+def f0(V,Ec,Gt,V0,T):
+    
+    return Gt*(1-(Ec/(kB*T))*CBT_model_g((V_data-V0)/(100*kB*T)))
+
+p0=[4e-6,2.16e-5,0,30e-3]
+par0,cov0=curve_fit(f0,V_data,G_data,p0=p0)
+p0=[meanGts,us[10],meanV0,Ts[0]]
+def gaussian(u,u0,sig):
+    logout=(u-u0)**2/(sig**2)
+    
+    try:
+        out=np.array(logout)
+        
+        out[logout<=100]=np.exp(-logout[logout<=100])
+        # out=np.exp(-logout)
+        out[logout>100]=0
+        return out
+    except Exception:
+        print('e')
+        if logout>100:
+            return 0
+        else:
+            return np.exp(-logout)
+        
+
+def super_model(V,Gt,u0,V0,T):
+    sig=0.05#np.mean(np.diff(us))/np.sqrt(2)
+    den=np.sum(np.array([gaussian(u,u0,sig) for f,u in models[0:11]]),axis=0)
+    
+    sup=Gt*np.sum(np.array([gaussian(u,u0,sig)*f((V-V0)/(u*kB*T)) for f,u in models[0:11]]),axis=0)/den
+    
     return sup
-bounds=([0,us[0],0.01,np.min(V_data),0.001],[1e-3,us[-1],1,np.max(V_data),1])
+# bounds=([0,us[0],0.01,np.min(V_data),0.001],[1e-3,us[-1],1,np.max(V_data),1])
+bounds=([0,us[0]-0.01,np.min(V_data),0.001],[1e-3,3,np.max(V_data),1])
 par,cov=curve_fit(super_model,V_data,G_data,p0=p0,bounds=bounds)
 plt.figure()
 plt.plot(V_data,G_data)
 plt.plot(V_data,super_model(V_data,*par))
+plt.plot(V_data,f0(V_data,*par0),linewidth=3)
+print(p0)
+print(par)
+plt.figure()
+uss=np.linspace(np.min(us),np.max(us),20)
+for u in uss:
+    par[1]=u
+    plt.plot(V_data,super_model(V_data,*par),label=str(u),color=[0,(u-np.min(us))/(np.max(us)-np.min(us)),0])
+    plt.legend()
+# plt.figure()
+# for j in np.arange(len(us)):
+#     # j=7
+#     f=models[j][0]
+#     plt.plot(V_data,pars[j][1]*f((V_data-pars[j][2])/pars[j][0]),label=str(us[j]))
+#     plt.legend()
 #%%
 
 def ff(V_experiment,u):
