@@ -482,7 +482,7 @@ for u in unitless_u:
         plt.close()
 #%%
 #store data
-us=np.linspace(0.1,3,30)
+us=np.linspace(0.1,4,40)+0.025
 lim=5.2*5.439*N
 points=131
 V=np.linspace(-lim,lim,points)
