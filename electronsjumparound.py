@@ -346,7 +346,7 @@ class CBTmain: #just does the simulation, no further analysis
 
             self.B=self.Cinv@self.MMM
             C=np.einsum('ij,ij->j',self.MMM,self.B)/2
-            bound=np.kron(self.U/(self.Ec),(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor)
+            bound=np.kron(self.U/(2*self.Ec),(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor)
             self.boundary_works=self.U.repeat(number_of_concurrent)/(2*self.Ec)
             self.gi=np.tile(self.Cs,int(len(bound)/self.N))
             # self.gi2=self.gi.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
