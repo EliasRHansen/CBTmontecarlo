@@ -351,6 +351,7 @@ class CBTmain: #just does the simulation, no further analysis
             self.gi=np.tile(self.Cs,int(len(bound)/self.N))
             # self.gi2=self.gi.reshape(self.number_of_concurrent*self.number_of_Us,2*self.N)
             print('gi:'+str(self.gi))
+            # print(bound/C)
             self.dE0=C+bound
         # else:
         #     print(str(self.parallelization)+' is not implemented as a value for the parameter parallelization')
@@ -377,7 +378,9 @@ class CBTmain: #just does the simulation, no further analysis
         E[self.N-1::2*self.N]=E[self.N-1::2*self.N]+self.boundary_works
         E[self.N::2*self.N]=E[self.N::2*self.N]-self.boundary_works
         E[2*self.N-1::2*self.N]=E[2*self.N-1::2*self.N]-self.boundary_works
-
+        # print('0:'+str(self.dE0[0]/E[0]))
+        # print(self.dE0[34]/E[34])
+        # print(np.mean(self.dE0/E))
         return E
     def update_transition_rate(self,n1):
         """
@@ -700,9 +703,9 @@ class CBT_data_analysis:
                 number_of_time_steps_with_data=len(CBT.dQp)
                 dQ=np.empty((len(Us),number_of_time_steps_with_data,nc))
                 dt=np.empty((len(Us),number_of_time_steps_with_data,nc))
-                for j in np.arange(len(CBT.dQp)):
-                    i1=CBT.dQp[j]
-                    i2=CBT.dtp[j]
+                for j in np.arange(len(CBT.dQps)):
+                    i1=CBT.dQps[j]
+                    i2=CBT.dtps[j]
                     dQ1=np.array(i1).reshape(number_of_time_steps_with_data,batchlengths[j],nc)
                     dt1=np.array(i2).reshape(number_of_time_steps_with_data,batchlengths[j],nc)
                     dQ1=np.array(dQ1).swapaxes(1,0)

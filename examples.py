@@ -17,16 +17,16 @@ e_SI=1.602*1e-19
 N=100 #Number of islands
 Ec=4.6e-6 #Charging energy in units of eV
 Gt=2.16e-5 #Large voltage asymptotic conductance (affects noly the scaling of the result)
-T=0.020 #Temperature in Kelvin
+T=0.050 #Temperature in Kelvin
 FWHM=5.439*kB*T*N #Full width half max according to the first order model
-points=101 #number of voltages to run the simulation for
-lim=1.5*FWHM
+points=11 #number of voltages to run the simulation for
+lim=3*FWHM
 V=np.linspace(-lim,lim,points)
 
 
 ####Run main simulation####
-res=carlo_CBT(V,T,Ec,Gt,N=N,Nruns=10000,Ninterval=1000,Ntransient=10000,n_jobs=2,number_of_concurrent=8,
-              parallelization='external',q0=0,dV=FWHM/50,batchsize=10)
+res=carlo_CBT(V,T,Ec,Gt,N=N,Nruns=10000,Ninterval=2000,Ntransient=10000,n_jobs=2,number_of_concurrent=8,
+              parallelization='internal',q0=0,dV=FWHM/50,batchsize=10,transient =1)
 
 
 ####store main results###
@@ -185,8 +185,8 @@ idd_1=1859
 
 dGs,voltages,currents,dGs_std,voltages_std,currents_std,dGs_av,voltages_av,currents_av,idds=load_data(idd_0,idd_1)
 
-V_data=voltages_av[400:1100][::10]
-G_data=dGs_av[400:1100][::10]
+V_data=voltages_av[400:1100]
+G_data=dGs_av[400:1100]
 plt.figure()
 plt.plot(V_data,G_data,'.')
 p0=[30e-3,4e-6,2.17e-5,0]
@@ -482,17 +482,18 @@ for u in unitless_u:
         plt.close()
 #%%
 #store data
-us=np.linspace(0.1,4,40)+0.025
-lim=5.2*5.439*N
-points=131
+us=4e-6/(kB*np.linspace(5e-3,16e-3,12))
+# us=np.linspace(0.1,4,40)+0.025
+lim=4.5*5.439*N
+points=201
 V=np.linspace(-lim,lim,points)
 number_of_concurrent=20
-q0=0
+q0=np.random.uniform(low=-1,high=1,size=(N-1,))
 n_jobs=2
-Nruns=30000
-Ninterval=10
-Ntransient=330000
-transient=500
+Nruns=55000
+Ninterval=4
+Ntransient=300000
+transient=1500
 for u in us:
     print(u)
     res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
@@ -502,7 +503,27 @@ for u in us:
         plt.pause(0.05)
         plt.show()
     res.savedata()
+#%%
+path_to_data=os.getcwd()+'\\Final data 2\\'
+all_files = list()
+dirname=list()
+dirpaths=list()
+models=list()
+pars=list()
+for (dirpath, dirnames, filenames) in os.walk(path_to_data):
+    print(1)
+    npz_files = list(filter(lambda x: x[-4:] == '.npz', filenames))
+    print(npz_files)
+    if len(npz_files) != 0:
+        all_files += npz_files
+        dirname+=dirnames
+        dirpaths+=[dirpath+'\\']
 
+        fit_result=fit_carlo(V_data,G_data, filename=os.path.join(dirpath,npz_files[0]),plot=True,save=False,save_fig_folder=dirpath+'\\')
+        if (np.mean(fit_result.offset_C)==0) and (np.mean(fit_result.second_order_C)==0) and (np.mean(fit_result.q0)==0):
+            
+            models.append((fit_result.model,fit_result.u))
+            pars.append(fit_result.par)
 #%%
 #folder_with_results='C:\\Users\\Elias Roos Hansen\\Documents\\Københavns uni\\qdev\\code\Runs with too much data'+'\\Results 2022-01-10 20.56.02.630781, sim time=1672.6sec\\'
 path_to_data='C:\\Users\\Elias Roos Hansen\\Documents\\Københavns uni\\qdev\\code\Runs with too much data'
