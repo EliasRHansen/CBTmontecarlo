@@ -338,7 +338,7 @@ class CBTmain: #just does the simulation, no further analysis
         if iterable(self.U)==False:
             C=np.einsum('ij,ij->j',self.MMM_withoutU,self.B_withoutU)/2
 
-            self.dE0=C+self.U/(self.Ec)*(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor
+            self.dE0=C+self.U/(2*self.Ec)*(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor
             self.boundary_works=self.U/(2*self.Ec)
             self.gi=np.tile(self.Cs,int(len(self.dE0)/self.N))
             # self.gi2=self.gi.reshape(self.number_of_concurrent,2*self.N)
@@ -606,11 +606,12 @@ class CBTmain: #just does the simulation, no further analysis
         else:
             self.ns=np.array([self.n0]*self.number_of_Us).T
         self.update_number_of_concurrent(number_of_concurrent)
-
+        print(self.ns)
+        self.ns0=np.array(self.ns)
         self.ns=self.ns.repeat(self.number_of_concurrent,axis=1)
         print('initiating multistep for the transient window for '+str(self.number_of_concurrent*self.number_of_Us)+' charge configurations')
         # print('initial charge configuration (columns):')
-        # print(self.n0)
+        
         if print_every is None:
             print_every=int(number_of_steps/100+1)
         for i in np.arange(number_of_steps):
