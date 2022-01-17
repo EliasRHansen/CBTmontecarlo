@@ -382,6 +382,17 @@ class CBTmain: #just does the simulation, no further analysis
         # print(self.dE0[34]/E[34])
         # print(np.mean(self.dE0/E))
         return E
+    def E0(self,nn):
+        v=self.Cinv@nn
+        E=np.einsum('ij,ij->j',nn,v)
+        return E
+    # def E1(self,nn):
+    #     v=self.Cinv@nn
+    #     b=np.kron(self.U/(2*self.Ec),(self.Cs[0]*v[0,:]-self.Cs[-1]*v[-1,:])*self.Ec_factor)
+        
+    #     E=(nn.T@v).flatten()
+    #     return E+b
+    
     def update_transition_rate(self,n1):
         """
 
@@ -526,7 +537,8 @@ class CBTmain: #just does the simulation, no further analysis
                 self.Gamdif=np.sum(self.gammas3[:,0:self.N]-self.gammas3[:,self.N::],axis=1)
                 self.dtp.append(self.dt_f())
                 self.dQp.append(self.dQ_f())
-
+                print('store E')
+                self.Ep.append(self.E0(self.ns))
             self.indices=pick_event2(self.p)#self.pick_event(neff,1)
             # self.indices=list(self.indices)
             n_new=neff+self.MM[:,self.indices]
@@ -586,6 +598,7 @@ class CBTmain: #just does the simulation, no further analysis
             print('attribute p does not exist')
         self.dtp=[]
         self.dQp=[]
+        self.Ep=[]
 
         if skip_transient:
             print('n0 is being moved forward through the transient window')
@@ -606,7 +619,7 @@ class CBTmain: #just does the simulation, no further analysis
         else:
             self.ns=np.array([self.n0]*self.number_of_Us).T
         self.update_number_of_concurrent(number_of_concurrent)
-        print(self.ns)
+        # print(self.ns)
         self.ns0=np.array(self.ns)
         self.ns=self.ns.repeat(self.number_of_concurrent,axis=1)
         print('initiating multistep for the transient window for '+str(self.number_of_concurrent*self.number_of_Us)+' charge configurations')
