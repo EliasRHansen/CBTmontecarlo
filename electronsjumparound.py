@@ -537,8 +537,8 @@ class CBTmain: #just does the simulation, no further analysis
                 self.Gamdif=np.sum(self.gammas3[:,0:self.N]-self.gammas3[:,self.N::],axis=1)
                 self.dtp.append(self.dt_f())
                 self.dQp.append(self.dQ_f())
-                print('store E')
-                self.Ep.append(self.E0(self.ns))
+                # print('store E')
+                # self.Ep.append(self.E0(self.ns))
             self.indices=pick_event2(self.p)#self.pick_event(neff,1)
             # self.indices=list(self.indices)
             n_new=neff+self.MM[:,self.indices]

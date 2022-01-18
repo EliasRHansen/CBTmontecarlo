@@ -487,9 +487,10 @@ for u in unitless_u:
         plt.close()
 #%%
 #store data
-us=4e-6/(kB*np.linspace(17e-3,50e-3,31))
-# us=np.linspace(0.1,4,40)+0.025
-lim=5.2*5.439*N
+us=4e-6/(kB*np.linspace(101e-3,200e-3,100))[6::]
+# us=np.linspace(0.1,4,40)+0.0254
+N=100
+lim=5*5.439*N
 points=151
 V=np.linspace(-lim,lim,points)
 number_of_concurrent=20
@@ -497,19 +498,19 @@ q0=np.random.uniform(low=-1,high=1,size=(N-1,))
 n_jobs=2
 Nruns=30000
 Ninterval=4
-Ntransient=300000
+Ntransient=50000
 transient=1500
 for u in us:
     print(u)
-    res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=2,number_of_concurrent=number_of_concurrent,
-                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=10,transient=transient)
+    res=carlo_CBT(V,1/kB,u,1,N=N,Nruns=Nruns,Ninterval=Ninterval,Ntransient=Ntransient,n_jobs=n_jobs,number_of_concurrent=number_of_concurrent,
+                  parallelization='external',q0=q0,dV=5.439*N/(u*50),batchsize=20,transient=transient)
     if u==us[0]:
         res.plotG()#just to seee that it is working
         plt.pause(0.05)
         plt.show()
     res.savedata()
 #%%
-path_to_data=os.getcwd()+'\\17to50mK\\'
+path_to_data=os.getcwd()+'\\51to100mK\\'
 all_files = list()
 dirname=list()
 dirpaths=list()
