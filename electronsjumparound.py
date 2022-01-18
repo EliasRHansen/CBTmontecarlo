@@ -336,7 +336,7 @@ class CBTmain: #just does the simulation, no further analysis
         self.BB=self.Cinv@self.MM
         self.BB=np.array(self.BB,dtype=self.dtype)
         if iterable(self.U)==False:
-            C=np.einsum('ij,ij->j',self.MMM_withoutU,self.B_withoutU)/2
+            C=-np.einsum('ij,ij->j',self.MMM_withoutU,self.B_withoutU)/2
 
             self.dE0=C+self.U/(2*self.Ec)*(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor
             self.boundary_works=self.U/(2*self.Ec)
@@ -345,7 +345,7 @@ class CBTmain: #just does the simulation, no further analysis
         else:
 
             self.B=self.Cinv@self.MMM
-            C=np.einsum('ij,ij->j',self.MMM,self.B)/2
+            C=-np.einsum('ij,ij->j',self.MMM,self.B)/2
             bound=np.kron(self.U/(2*self.Ec),(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor)
             self.boundary_works=self.U.repeat(number_of_concurrent)/(2*self.Ec)
             self.gi=np.tile(self.Cs,int(len(bound)/self.N))
