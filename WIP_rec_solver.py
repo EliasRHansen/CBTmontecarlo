@@ -141,7 +141,7 @@ def diff(b,U,number_of_ns,t_eval=None):
         C=CC(n,b,U)
         B=BB(n,b,U)
         L=LL(n,b,U)
-        sig0prime=-2*(B-L)*sig[0]/(B+L)-2*(B+L-C)*sig[1]/(B+L)
+        sig0prime=-2*(B-L)*sig[0]/(B+L)-2*(1-C/(B+L))*sig[1]
         sig1prime=sig[0]
         return np.array([sig0prime,sig1prime])
     y0=[0,1]
@@ -177,7 +177,7 @@ def diff_4(b,U,number_of_ns,t_eval=None):
     B=BB(0,b,U)
     L=LL(0,b,U)
     k2=1-C/(B+L)
-    y0=[0,-k2,0,1]
+    y0=[0,-2*k2,0,1]
     res1=solve_ivp(D,(0,number_of_ns),y0=y0,t_eval=t_eval)
     res2=solve_ivp(D,(0,-number_of_ns),y0=y0,t_eval=-t_eval)
 
@@ -216,8 +216,8 @@ def diff_0(b,U,number_of_ns,t_eval=None):
     tt=t[:,ind[0]]
     return yy,tt.flatten()
 N=6
-b=10
-U=1
+b=1
+U=0
 plt.figure(figsize=(11,9))
 y,t=diff_0(b,U,N,t_eval=np.linspace(0,N-0.1,100))
 plt.plot(t,y[1],label='Solution to differential equation expanded to first order in u (gaussian)')
