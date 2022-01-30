@@ -58,7 +58,7 @@ def pick_event2(x):
     Parameters
     ----------
     x : 2d array of floats
-        dimension is probabilities for each transition of the particular charge array represented by the zeroth dimension
+        1st dimension is probabilities for each transition of the particular charge array represented by the zeroth dimension
 
     Returns
     -------
@@ -336,7 +336,7 @@ class CBTmain: #just does the simulation, no further analysis
         self.BB=self.Cinv@self.MM
         self.BB=np.array(self.BB,dtype=self.dtype)
         if iterable(self.U)==False:
-            C=-np.einsum('ij,ij->j',self.MMM_withoutU,self.B_withoutU)/2
+            C=np.einsum('ij,ij->j',self.MMM_withoutU,self.B_withoutU)/2
 
             self.dE0=C+self.U/(2*self.Ec)*(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor
             self.boundary_works=self.U/(2*self.Ec)
@@ -345,7 +345,7 @@ class CBTmain: #just does the simulation, no further analysis
         else:
 
             self.B=self.Cinv@self.MMM
-            C=-np.einsum('ij,ij->j',self.MMM,self.B)/2
+            C=np.einsum('ij,ij->j',self.MMM,self.B)/2
             bound=np.kron(self.U/(2*self.Ec),(self.Cs[0]*self.B_withoutU[0,:]-self.Cs[-1]*self.B_withoutU[-1,:]+self.second_order_C[1]*self.B_withoutU[1,:]-self.second_order_C[-1]*self.B_withoutU[-2,:])*self.Ec_factor)
             self.boundary_works=self.U.repeat(number_of_concurrent)/(2*self.Ec)
             self.gi=np.tile(self.Cs,int(len(bound)/self.N))
@@ -1337,11 +1337,11 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                 # chi_0=chi(G_data,f0(V_data,*par0),np.mean(wacky_sigma(V_data/par[0])*par[1]/np.sqrt(number_of_concurrent)))
                 if plot:
                     fig=plt.figure(figsize=(11,6))
-                    plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
+                    plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std,markersize=1.5)
                     plt.title('Best MC Fit parameters for u={:.2f}, <$q_0^2$>={:.2f}e: '.format(u,np.mean(q0**2))+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV, $C_0$/C={:.2f}, <$\delta C^2$>/C={:.2f}'.format(1e6*par[0],np.mean(offset_C),np.mean(dC**2))
                               +r', <$C^{(2)}$>'+'/C={:.3f}'.format(np.mean(second_order_C)))
                     # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
-                    plt.errorbar(V*par[0]/Ec0+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2/n={:.1f}$'.format(chi_model/len(V_data)),fmt='.')
+                    plt.errorbar(V*par[0]/Ec0+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2/n={:.1f}$'.format(chi_model/len(V_data)),fmt='.',capsize=1)
                     plt.ylabel('conductance [Si]')
                     plt.xlabel('Bias voltage [V]')
                     plt.tight_layout()
@@ -1363,10 +1363,10 @@ def fit_carlo(V_data,G_data,u=None,V_data_std=None,G_data_std=None,V=None,N=100,
                                 fig.savefig(save_fig_folder+'Chi_sq_plot1.png')
 
                     fig=plt.figure(figsize=(11,6))
-                    plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std)
+                    plt.errorbar(V_data,G_data,fmt='.',label='experimental data',yerr=G_data_std,xerr=V_data_std,markersize=1.5)
                     plt.title('Best MC Fit parameters for u={:.2f}, <$q_0^2$>={:.2f}e: '.format(u,np.mean(q0**2))+' T={:.1f} mK'.format(1e3*par[0]/(u*kB))+'\n $G_T={:.1e}$'.format(par[1])+r' $\Omega^{-1}$'+' $E_c$={:.1e} $\mu$eV'.format(1e6*par[0]))
                     # plt.errorbar(V_data,G_MC,yerr=wacky_sigma(V_data/par[0])*par[2]/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2={:.1f}$'.format(chi_model),fmt='.')
-                    plt.errorbar(V*par[0]/Ec0+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2/n={:.1f}$'.format(chi_model/len(V_data)),fmt='.')
+                    plt.errorbar(V*par[0]/Ec0+par[2],mean_conductances*par[1],yerr=par[1]*std_conductance/np.sqrt(number_of_concurrent),label='MC Simulation, best fit for u={:.2f}: '.format(u)+' $\chi^2/n={:.1f}$'.format(chi_model/len(V_data)),fmt='.',capsize=1.5,mew=0.5,mec='black',ecolor='black')
 
                     #plt.plot(V_data,res.CBT_model_G((V_data-par[2])/par[0])*par[1],label='1st order result for same parameters as the MC')
                     plt.plot(V_data,f0(V_data,*par0),label='1st order result for optimal first order parameters: T={:.1f}mK'.format(1e3*par0[3]))

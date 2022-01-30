@@ -28,18 +28,18 @@ V=np.linspace(-lim,lim,points)
 res=carlo_CBT(V,T,Ec,Gt,N=N,Nruns=10000,Ninterval=200,Ntransient=100000,n_jobs=2,number_of_concurrent=8,
               parallelization='internal',q0=0,dV=FWHM/50,batchsize=22,transient =10)
 
-# res_ori=carlo_CBT(V,T,Ec,Gt,N=N,Nruns=5000,Ninterval=20,Ntransient=100000,n_jobs=2,number_of_concurrent=8,
-#               parallelization='internal',q0=0,dV=FWHM/50,batchsize=10,transient =10)
+res_ori=carlo_CBT(V,T,Ec,Gt,N=N,Nruns=5000,Ninterval=20,Ntransient=100000,n_jobs=2,number_of_concurrent=8,
+              parallelization='internal',q0=0,dV=FWHM/50,batchsize=10,transient =10)
 ####store main results###
 mean_conductances=res.Gsm #mean conductance
 std_conductance=res.Gstd #standard deviation of conductance
 mean_currents=res.currentsm #mean currents
 res.plotG(save=False)
 # res.plotI(save=True)
-# plt.figure()
-# plt.plot(V,res.Gsm)
-# plt.plot(V,res_ori.Gsm,label='right')
-# plt.legend()
+plt.figure()
+plt.plot(V,res.Gsm)
+plt.plot(V,res_ori.Gsm,label='right')
+plt.legend()
 #%%
 #######Crazy stuff####
 from scipy.optimize import curve_fit
@@ -190,8 +190,8 @@ idd_1=1859
 
 dGs,voltages,currents,dGs_std,voltages_std,currents_std,dGs_av,voltages_av,currents_av,idds=load_data(idd_0,idd_1)
 
-V_data=voltages_av[400:1100]
-G_data=dGs_av[400:1100]
+V_data=voltages_av
+G_data=dGs_av
 plt.figure()
 plt.plot(V_data,G_data,'.')
 p0=[30e-3,4e-6,2.17e-5,0]
@@ -487,7 +487,7 @@ for u in unitless_u:
         plt.close()
 #%%
 #store data
-us=4e-6/(kB*np.linspace(101e-3,200e-3,100))[6::]
+us=4e-6/(kB*np.linspace(201e-3,250e-3,50))
 # us=np.linspace(0.1,4,40)+0.0254
 N=100
 lim=5*5.439*N
@@ -510,7 +510,7 @@ for u in us:
         plt.show()
     res.savedata()
 #%%
-path_to_data=os.getcwd()+'\\51to100mK\\'
+path_to_data=os.getcwd()+'\\17to50mK\\'
 all_files = list()
 dirname=list()
 dirpaths=list()
