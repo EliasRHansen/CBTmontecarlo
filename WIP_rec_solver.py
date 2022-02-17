@@ -9,15 +9,15 @@ import matplotlib.pyplot as plt
 from scipy.integrate import simps
 from scipy.special import exprel,expm1
 from derivative import dxdt
+from scipy.optimize import curve_fit
 def dE(n,U):
-    return 1/2+n+U/2
+    return -1/2+n+U/2
 
 def gam(n,b,U):
     n=n-1e-16
     U=U-1e-16
     b=b-1e-16
     #return -dE(n,U)/np.expm1(-b*dE(n,U))
-    
     return 1/(b*exprel(-b*dE(n,U)))
 def CC(n,b,U):
     return gam(n, b, -U) + gam(n, b, U)+gam(-n, b, -U) + gam(-n, b, U)
@@ -253,21 +253,29 @@ if __name__=='__main__':
     recc=take2(b,U)
     s,ns=recc(N)
     plt.plot(ns,s/np.sum(s),'o-',label='Exact solution to master recurrence equation',color='black')
-    plt.ylabel('P (roughly normalized)')
+    plt.ylabel('Probability')
     plt.xlabel('n')
     plt.title('Master eq. vs approximate 2nd order dif. eq. u={}, eU/Ec={}'.format(b,U))
     plt.legend(loc=1)
     plt.tight_layout()
 #%%
 if __name__=='__main__':
-    N=7 
-    b=2
-    U=100
+    N=10
+    b=5
+    U=10
     def analytic_1(b,U,ns):
         return np.exp(-b*ns**2/2)/np.sqrt(np.pi*2/b)
     def analytic_2i(b,U,ns):
-        v=1/b+5/12
-        return np.exp(-ns**2/(2*v))*np.sqrt(1/(2*np.pi*v))
+        # v=1/b+5/12
+        # v=(U/2)/np.tanh(U/2)
+        # print(v)
+        if U==0:
+            v=b*U+1e-15
+        else:
+            v=b*U
+        return np.exp(-b*np.tanh(v/2)*ns**2/(v))*np.sqrt(b*np.tanh(v/2)/(np.pi*v))
+                      
+                      
     def analytic_4i(b,U,ns):
         # f=b*(1-5*b/12)+(1-ns**2+U**2/6)*b**3/8+(23*U**2/1440-17/576+31*ns**2/240-ns**4/11)*b**4
         # v=1/b+5/12+((7+3*U**2)/144+ns**2/8)*b#+((-5+3*U**2)/2160-ns**2/40+ns**4/11)*b**2
@@ -281,8 +289,8 @@ if __name__=='__main__':
         v=1/b+5/12+((7+3*U**2)/144)*b+((-5+3*U**2)/2160)*b**2-((9*U**4+174*U**2+49)/103680)*b**3
         v=v+((171*U**4+30*U**2+175)/2177280)*b**4
         return np.exp(-ns**2/(2*v))
-    plt.figure(figsize=(10,6))
-    plt.ylim((-0.01,0.7))
+    plt.figure(figsize=(11,6))
+    # plt.ylim((-0.01,0.7))
     # y,t=diff_0(b,U,N,t_eval=np.linspace(0,N-0.1,100))
     # plt.plot(t,y[1]/simps(y[1],x=t),label='Solution to differential equation expanded to first order in u (gaussian)')
     # plt.plot(t,analytic_1(b,U,t),'--',label='Solution to 2nd order differential equation to first order in u (gaussian)')
@@ -290,16 +298,16 @@ if __name__=='__main__':
     plt.plot(t,y[1]/simps(y[1],x=t),label='Solution to 2nd order differential equation to all orders in u')
     # plt.plot(t,analytic_1(b,U,t),'--',label='Solution to 2nd order differential equation to 1st order in u (gaussian)')
     # plt.plot(t,analytic_2(b,U,t),'--',label='Solution to 2nd order differential equation to 2nd order in u (gaussian)')
-    plt.plot(t,analytic_2i(b,U,t),'--',label='Solution to 2nd order diff. equation to 2nd order in u (gaussian)')
-    plt.plot(t,analytic_4i(b,U,t)/simps(analytic_4i(b,U,t),x=t),'--',label='Solution to 2nd order diff. eq. including 4th order terms (gaussian)')
+    plt.plot(t,analytic_2i(b,U,t),'--',label='analytic solution to 2nd order in u (gaussian)')
+    # plt.plot(t,analytic_4i(b,U,t)/simps(analytic_4i(b,U,t),x=t),'--',label='Solution to 2nd order diff. eq. including 4th order terms (gaussian)')
     
-    # y,t=diff_4(b,U,N,t_eval=np.linspace(0,N-0.1,100))
-    # plt.plot(t,y[-1]/simps(np.abs(y[-1]),x=t),label='Solution to 4th order differential equation to all orders in u')
+    y,t=diff_4(b,U,N,t_eval=np.linspace(0,N-0.1,100))
+    plt.plot(t,y[-1]/simps(np.abs(y[-1]),x=t),label='Solution to 4th order differential equation to all orders in u')
     # plt.plot(res2.t,res2.y[1])
     recc=take2(b,U)
     s,ns=recc(N)
     plt.plot(ns,s/np.sum(s),'o-',label='Exact solution to master recurrence equation',color='black')
-    plt.ylabel('P (roughly normalized)')
+    plt.ylabel('Probability')
     plt.xlabel('n')
     plt.title('Master eq. vs approximate 2nd order dif. eq. u={}, eU/Ec={}'.format(b,U))
     plt.legend(loc=1)
@@ -321,39 +329,65 @@ kB=8.617*1e-5
 bb=4e-6/(kB*np.linspace(1e-3,2000e-3,7000))
 
 U=0
-Us=np.linspace(0,25,251)
+Us=np.linspace(0,10,51)
 Vars=[]
+# Vars_from_fit=[]
+# Fit_covs=[]
 Vars0_2=[]
 Vars0_4=[]
-N=40
-for U in Us:
+N=25
+# def parfit(x,sig,b):
+#     return b-x**2/(2*sig)
+
+for U_i in np.arange(len(Us)):
+    U=Us[U_i]
     print(U)
     var=[]
+    var_from_fit=[]
+    fit_covs=[]
     vars0_2=[]
     vars0_4=[]
-    # plt.figure(figsize=(10,6))
-    # plt.title('Exact solution to master recurrence equation, eU/Ec={:.2f}'.format(U))
+    plt.figure(figsize=(10,6))
+    plt.title('Exact solution to master recurrence equation, eU/Ec={:.2f}'.format(U))
     for b_i in np.arange(len(bb)):
         b=bb[b_i]
+        
         recc=take2(b,U)
         s,ns=recc(N)
-        
-        variance=np.sum(np.array(ns)**2*np.array(s))/np.sum(np.array(s))
+        s=np.array(s)
+
+        ns=np.array(ns)
+        norm=np.sum(np.array(s))
+        variance=np.sum(ns**2*s)/norm
         var.append(variance)
         vars0_2.append(var0_2(b,U))
         vars0_4.append(var0_4(b,U))
-        # if b_i%1000==0:
-        #     plt.plot(ns,s/np.sum(s),'o-',label='Exact solution to master recurrence equation, u={:.2f}'.format(b),color=[bb[-1]/b,0,0])
-        #     plt.ylabel('P')
-        #     plt.xlabel('charge [# of e]')
-            # plt.pause(0.05)
-            # plt.draw()
+
+        # s_fit=s[s/np.max(s)>1e-4]
+        # ns_fit=ns[s/np.max(s)>1e-4]
+
+        # par,cov=curve_fit(parfit,ns_fit,np.log(s_fit))
+        # var_from_fit.append(par[0])
+        # fit_covs.append(cov[0,0])
+        
+        if (b_i%1000==0) and (U_i%1==0):
+            plt.plot(ns,np.log(s/norm)/np.log(10),'o-',label='Exact solution to master recurrence equation, u={:.2f}'.format(b),color=[bb[-1]/b,0,0])
+            # plt.plot(ns_fit,np.log(s_fit/norm)/np.log(10),'o-',label='Exact solution to master recurrence equation, u={:.2f}'.format(b),color=[0,bb[-1]/b,0])
+            # plt.plot(ns_fit,parfit(ns_fit,*par))
+            plt.ylabel('P')
+            plt.xlabel('charge [# of e]')
+            plt.pause(0.02)
+            plt.draw()
     Vars.append(var)
+    # Vars_from_fit.append(var_from_fit)
+    # Fit_covs.append(fit_covs)
     Vars0_2.append(vars0_2)
     Vars0_4.append(vars0_4)
 Vars=np.array(Vars)
 Vars0_2=np.array(Vars0_2)
 Vars0_4=np.array(Vars0_4)
+# Vars_from_fit=np.array(Vars_from_fit)
+#%%
 # plt.figure(figsize=(10,6))
 # for i in np.arange(len(Us)):
 #     plt.plot(bb,bb*np.array(Vars[i]),label='exact, U/Ec={}'.format(Us[i]),color=[i/len(Us),0,0])   
@@ -378,10 +412,11 @@ plt.legend()
 
 plt.figure(figsize=(10,6))
 for i in np.arange(len(Us)):
-    plt.plot(bb,1/Vars[i],'.-',label='exact, U/Ec={:.1f}'.format(Us[i]),color=[i/len(Us),0,0])   
+    # plt.loglog(bb,1/Vars[i],'.-',label='exact, U/Ec={:.1f}'.format(Us[i]),color=[i/len(Us),0,0]) 
+    plt.loglog(bb,2*bb*np.tanh(Us[i]*bb/2)/(Us[i]*bb),color=[i/len(Us),0,0])
     plt.xlabel('u')
     # plt.ylabel(r'u$\times$ var')	
-    plt.title('variance vs u')
+    plt.title('variance vs u for approximate solution')
 
 plt.figure()
 argmaxs=np.array([np.argmax(s) for s in dlnvardlnus])
@@ -401,7 +436,7 @@ for b_i in np.arange(len(bb)):
 
 
 
-from scipy.optimize import curve_fit
+
 def varinv(u,m,m1,a,b):
     return -a*expm1(-m*u)-b*expm1(-m1*u**2)
 
@@ -473,26 +508,39 @@ for i in np.arange(len(Us)):
         plt.xlabel('u')
         # plt.ylabel(r'$\frac{d}{du}ln\frac{d(1/var)}{d(u)}$')	
         # plt.title('second derivative of variance')
-def varinv2(u,k1,u0,m):
-    return k1*(u-u0)*np.exp(-m*u)/u0
+def varinv2(u,u0,m):
+    return (u/u0-1)*np.exp(-m*u)
 plt.figure()
 pars=[]
 for i in np.arange(len(Us)):
-    if i%1==0:
-        p0=[1,1,1]
+    
+        p0=[1,1]
         par,cov=curve_fit(varinv2,bb,-(1-Vars[i][0]/Vars[i]),p0=p0)
         pars.append(par)
         print(par)
-        plt.semilogx(bb,-(1-Vars[i][0]/Vars[i]),'.-',label='exact, U/Ec={:.1f}'.format(Us[i]),color=[i/len(Us),0,0],linewidth=1)
-        plt.semilogx(bb,varinv2(bb,*par),label='fit, U/Ec={:.1f}'.format(Us[i]),color=[i/len(Us),0,0],linewidth=1)
+        if i%30==0:
+            plt.semilogx(bb,-(1-Vars[i][0]/Vars[i]),'.-',label='exact, U/Ec={:.1f}'.format(Us[i]),color=[i/len(Us),0,0],linewidth=1)
+            plt.semilogx(bb,varinv2(bb,*par),label='fit, U/Ec={:.1f}'.format(Us[i]),color=[i/len(Us),0,0],linewidth=1)
+
 plt.figure()
 pars=np.array(pars)
-plt.plot(Us,1/pars[:,1])
+plt.plot(Us,1/pars[:,0])
+plt.xlabel('bias voltage')
+plt.ylabel(r'$1/u_0$')
 plt.figure()
-plt.plot(Us[0:-1],np.diff(pars[:,2]))
+plt.plot(Us,(pars[:,1]))
+plt.xlabel('bias voltage')
+plt.ylabel(r'$m$')
 plt.figure()
 
 plt.plot(Us,Vars[:,0])
+plt.xlabel('bias voltage')
+plt.ylabel(r'$\sigma_\infty^2$')
+plt.figure()
+
+plt.plot(Us,np.gradient(np.gradient(Vars[:,0],Us),Us))
+plt.xlabel('bias voltage')
+plt.ylabel(r'$d\sigma_\infty^2/dV$')
 #%%
 
  

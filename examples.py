@@ -25,10 +25,10 @@ V=np.linspace(-lim,lim,points)
 
 
 ####Run main simulation####
-res=carlo_CBT(V,T,Ec,Gt,N=N,Nruns=10000,Ninterval=200,Ntransient=100000,n_jobs=2,number_of_concurrent=8,
+res=carlo_CBT(V,T,Ec,Gt,N=N,Nruns=10000,Ninterval=200,Ntransient=10000,n_jobs=2,number_of_concurrent=8,
               parallelization='internal',q0=0,dV=FWHM/50,batchsize=22,transient =10)
 
-res_ori=carlo_CBT(V,T,Ec,Gt,N=N,Nruns=5000,Ninterval=20,Ntransient=100000,n_jobs=2,number_of_concurrent=8,
+res_ori=carlo_CBT(V,T,Ec,Gt,N=N,Nruns=5000,Ninterval=20,Ntransient=10000,n_jobs=2,number_of_concurrent=8,
               parallelization='internal',q0=0,dV=FWHM/50,batchsize=10,transient =10)
 ####store main results###
 mean_conductances=res.Gsm #mean conductance
